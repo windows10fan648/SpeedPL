@@ -40,11 +40,40 @@ let pgPool = null;
 let mysqlPool = null;
 let dbReady = false;
 
-const pgUrl = process.env.DATABASE_URL && !/^mysql:\/\//i.test(process.env.DATABASE_URL)
-  ? process.env.DATABASE_URL
-  : null;
-const mysqlUrl = process.env.MYSQL_URL || process.env.TIDB_DATABASE_URL ||
-  (/^mysql:\/\//i.test(process.env.DATABASE_URL || '') ? process.env.DATABASE_URL : null);
+const rawDbUrl = process.env.DATABASE_URL || '';
+const explicitPg = /^postgres(ql)?:\/\//i.test(rawDbUrl);
+const explicitMysql = /^mysql2?:\/\//i.test(rawDbUrl) || /^tidb:\/\//i.test(rawDbUrl);
+const looksLikeTiDB = /tidb|:4000\b/i.test(rawDbUrl);
+const useDbParts = !!process.env.DB_HOST;
+
+let pgUrl = null;
+let mysqlUrl = process.env.MYSQL_URL || process.env.TIDB_DATABASE_URL || null;
+
+if (rawDbUrl) {
+  if (explicitPg) {
+    pgUrl = rawDbUrl;
+  } else if (explicitMysql || looksLikeTiDB) {
+    mysqlUrl = mysqlUrl || rawDbUrl.replace(/^tidb:\/\//i, 'mysql://');
+  } else if (!mysqlUrl && !explicitPg) {
+    // Ambiguous URL: prefer MySQL/TiDB when mysql2 is available, otherwise PostgreSQL.
+    try {
+      require.resolve('mysql2/promise');
+      mysqlUrl = rawDbUrl;
+    } catch (e) {
+      pgUrl = rawDbUrl;
+    }
+  } else {
+    pgUrl = rawDbUrl;
+  }
+}
+
+// Normalize TiDB scheme.
+if (mysqlUrl) mysqlUrl = mysqlUrl.replace(/^tidb:\/\//i, 'mysql://');
+
+if (useDbParts) {
+  pgUrl = null;
+  mysqlUrl = null;
+}
 
 if (pgUrl) {
   dbType = 'pg';
@@ -67,7 +96,7 @@ if (pgUrl) {
     )
   `).then(() => { dbReady = true; })
     .catch((err) => { console.error('Database init failed:', err.message); });
-} else if (mysqlUrl) {
+} else if (mysqlUrl || useDbParts) {
   let mysql;
   try {
     mysql = require('mysql2/promise');
@@ -76,7 +105,24 @@ if (pgUrl) {
   }
   if (mysql) {
     dbType = 'mysql';
-    mysqlPool = mysql.createPool(mysqlUrl);
+    let mysqlPoolOptions;
+    if (useDbParts) {
+      mysqlPoolOptions = {
+        host: process.env.DB_HOST,
+        port: Number(process.env.DB_PORT || 4000),
+        user: process.env.DB_USERNAME,
+        password: process.env.DB_PASSWORD,
+        database: process.env.DB_DATABASE,
+        ssl: { rejectUnauthorized: false },
+        waitForConnections: true,
+        connectionLimit: 10
+      };
+    } else {
+      mysqlPoolOptions = looksLikeTiDB
+        ? { uri: mysqlUrl, ssl: { rejectUnauthorized: false } }
+        : mysqlUrl;
+    }
+    mysqlPool = mysql.createPool(mysqlPoolOptions);
     mysqlPool.query(`
       CREATE TABLE IF NOT EXISTS speed_tests (
         id INT AUTO_INCREMENT PRIMARY KEY,
