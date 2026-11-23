@@ -1,0 +1,30 @@
+{
+  "name": "speedpl",
+  "version": "1.0.0",
+  "description": "Honest Polish internet speed test",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "keywords": [
+    "speed-test",
+    "poland",
+    "express"
+  ],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "chart.js": "^4.6.1",
+    "ejs": "^7.0.2",
+    "express": "^5.3.0",
+    "express-rate-limit": "^8.7.5",
+    "groq-sdk": "^1.6.0",
+    "mysql2": "^3.24.6",
+    "pg": "^8.23.1"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

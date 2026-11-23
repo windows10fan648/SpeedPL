@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SpeedPL - test predkosci internetu</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">SpeedPL</div>
+    <div class="subtitle">Uczciwy test predkosci internetu</div>
+  </header>
+
+  <main class="container">
+    <section class="panel controls">
+      <div class="field">
+        <label for="serverSelect">Serwer testowy</label>
+        <select id="serverSelect">
+          <% servers.forEach(function (s) { %>
+            <option value="<%= s.id %>" <%= s.configured ? '' : 'disabled' %>><%= s.name %><%= s.configured ? '' : ' (wymaga konfiguracji)' %></option>
+          <% }) %>
+        </select>
+      </div>
+      <div class="field">
+        <label for="sizeSelect">Rozmiar pobierania</label>
+        <select id="sizeSelect">
+          <option value="8388608">8 MB</option>
+          <option value="16777216" selected>16 MB</option>
+          <option value="33554432">32 MB</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="uploadSizeSelect">Rozmiar wysylania</label>
+        <select id="uploadSizeSelect">
+          <option value="4194304">4 MB</option>
+          <option value="8388608" selected>8 MB</option>
+          <option value="16777216">16 MB</option>
+        </select>
+      </div>
+      <div class="actions">
+        <button id="startBtn" class="btn primary">Rozpocznij test</button>
+        <button id="stopBtn" class="btn secondary" disabled>Zatrzymaj</button>
+      </div>
+      <label class="checkbox">
+        <input type="checkbox" id="saveHistory" checked>
+        Zapisz wynik w historii (jesli baza jest dostepna)
+      </label>
+    </section>
+
+    <section class="panel results">
+      <div class="metric-grid">
+        <div class="metric"><span>Pobieranie</span><strong id="downloadValue">--</strong><small>Mb/s</small></div>
+        <div class="metric"><span>Wysylanie</span><strong id="uploadValue">--</strong><small>Mb/s</small></div>
+        <div class="metric"><span>Ping</span><strong id="pingValue">--</strong><small>ms</small></div>
+        <div class="metric"><span>Jitter</span><strong id="jitterValue">--</strong><small>ms</small></div>
+        <div class="metric"><span>Latencja pod obciazeniem</span><strong id="loadedValue">--</strong><small>ms</small></div>
+      </div>
+      <div class="status" id="statusText">Gotowy.</div>
+      <canvas id="speedChart" height="120"></canvas>
+    </section>
+
+    <section class="panel">
+      <div class="row">
+        <h2>Analiza AI (Groq)</h2>
+        <button id="analyzeBtn" class="btn secondary" disabled>Analizuj wynik</button>
+      </div>
+      <div id="analysisText" class="analysis">Brak analizy.</div>
+    </section>
+
+    <section class="panel">
+      <div class="row">
+        <h2>Historia testow</h2>
+        <button id="refreshHistoryBtn" class="btn secondary">Odswiez</button>
+      </div>
+      <div id="historyBox" class="history">Ladowanie...</div>
+    </section>
+  </main>
+
+  <script src="/vendor/chart.js/chart.umd.js"></script>
+  <script src="/js/speedtest.js"></script>
+</body>
+</html>
