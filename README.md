@@ -30,7 +30,7 @@ Aplikacja nasłuchuje na `http://localhost:3000` (lub `process.env.PORT`).
 - `HOST` - adres nasłuchu.
 - `GROQ_API_KEY` - klucz API Groq (tylko backend).
 - `GROQ_MODEL` - domyślnie `openai/gpt-oss-20b`.
-- `GROQ_FALLBACK_MODEL` - zapasowy model Groq używany przy błędzie modelu głównego lub limicie zapytań (domyślnie `llama-3.1-8b-instant`).
+- `GROQ_FALLBACK_MODEL` - zapasowy model Groq używany przy błędzie modelu głównego lub limicie zapytań (domyślnie `qwen/qwen3.8-27b`).
 - `GROQ_API_URL` - domyślnie `https://api.groq.com/openai/v1/chat/completions`.
 - `DATABASE_URL` - opcjonalny PostgreSQL. Dla TiDB/MySQL ustaw `MYSQL_URL` lub `TIDB_DATABASE_URL` (albo `DATABASE_URL=mysql://...`) i zainstaluj opcjonalnie `mysql2` (poza pięcioma wymaganymi zależnościami).
 - `SPEEDPL_SERVERS` - opcjonalna lista węzłów JSON: `[{"id":"warsaw","name":"Warszawa","url":"https://..."}]`.
