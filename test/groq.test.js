@@ -71,6 +71,7 @@ test('buildAnalysisPrompt preserves exact numbers and computes bufferbloat', () 
   assert.match(prompt, /Utrata pakietów \(próby\): 0\.5%/);
   assert.match(prompt, /Kraków/);
   assert.match(prompt, /Praca zdalna/);
+  assert.match(prompt, /delikatnym, wspierającym/i);
 });
 
 test('analyzeWithGroq uses fallback model on 429/404 and skips fallback on 401', async () => {

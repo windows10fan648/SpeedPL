@@ -491,40 +491,7 @@ async function saveHistory() {
         uploadBytes: state.uploadBytes
       })
     });
-    await loadHistory();
   } catch (e) {}
-}
-
-async function loadHistory() {
-  const box = el('historyBox');
-  try {
-    const res = await fetch('/api/history');
-    const data = await res.json();
-    if (!data.enabled) {
-      box.textContent = 'Historia wyłączona (brak DATABASE_URL).';
-      return;
-    }
-    if (!data.items.length) {
-      box.textContent = 'Brak zapisanych testów.';
-      return;
-    }
-    const rows = data.items.map((r) => {
-      return `<tr>
-        <td>${new Date(r.created_at).toLocaleString('pl-PL')}</td>
-        <td>${escapeHtml(r.server_id)}</td>
-        <td>${fmt(r.download_mbps)}</td>
-        <td>${fmt(r.upload_mbps)}</td>
-        <td>${fmt(r.ping_ms)}</td>
-        <td>${fmt(r.jitter_ms)}</td>
-        <td>${fmt(r.loaded_latency_ms)}</td>
-      </tr>`;
-    }).join('');
-    box.innerHTML = `<table><thead><tr>
-      <th>Data</th><th>Serwer</th><th>Down</th><th>Up</th><th>Ping</th><th>Jitter</th><th>Loaded</th>
-    </tr></thead><tbody>${rows}</tbody></table>`;
-  } catch (e) {
-    box.textContent = 'Błąd ładowania historii.';
-  }
 }
 
 function fmt(v) {
@@ -685,10 +652,8 @@ function renderMarkdown(markdown) {
 document.addEventListener('DOMContentLoaded', () => {
   initChart();
   loadServers();
-  loadHistory();
   el('startBtn').addEventListener('click', runTest);
   el('stopBtn').addEventListener('click', stopTest);
   el('analyzeBtn').addEventListener('click', analyze);
   el('copyAnalysisBtn').addEventListener('click', copyAnalysis);
-  el('refreshHistoryBtn').addEventListener('click', loadHistory);
 });

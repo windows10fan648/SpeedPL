@@ -219,6 +219,10 @@ app.get('/', (req, res) => {
   res.render('index', { servers });
 });
 
+app.get('/history', (req, res) => {
+  res.render('history');
+});
+
 app.get('/api/servers', (req, res) => {
   res.json({ servers });
 });
