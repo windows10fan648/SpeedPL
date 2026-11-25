@@ -31,6 +31,7 @@ body {
 .container { max-width: 1100px; margin: 24px auto; padding: 0 16px; display: grid; gap: 18px; }
 .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 18px; box-shadow: 0 10px 30px rgba(0,0,0,.25); }
 .controls { display: grid; gap: 14px; }
+.controls-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
 .field { display: grid; gap: 6px; }
 label { color: var(--muted); font-size: 13px; }
 select, button { font: inherit; }
@@ -39,6 +40,7 @@ select {
   border-radius: 10px; padding: 10px 12px;
 }
 .actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.toggles { display: flex; gap: 18px; flex-wrap: wrap; }
 .btn {
   border: 1px solid var(--border); background: var(--panel-2); color: var(--text);
   border-radius: 10px; padding: 10px 16px; cursor: pointer; transition: .15s ease;
@@ -56,7 +58,18 @@ select {
 .metric span { color: var(--muted); font-size: 13px; }
 .metric strong { font-size: 28px; }
 .metric small { color: var(--muted); }
-.status { margin: 12px 0; color: var(--muted); min-height: 20px; }
+.progress-track {
+  margin-top: 14px; height: 6px; border-radius: 999px;
+  background: var(--panel-2); border: 1px solid var(--border); overflow: hidden;
+}
+.progress-bar {
+  height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  transition: width .2s ease;
+}
+.status { margin: 10px 0 12px; color: var(--muted); min-height: 20px; }
+.analysis-meta { color: var(--muted); font-size: 12px; margin-bottom: 8px; min-height: 16px; }
+.ai-controls { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.row.wrap { flex-wrap: wrap; }
 .analysis {
   background: var(--panel-2); border: 1px solid var(--border);
   border-radius: 12px; padding: 14px; min-height: 80px; font-family: inherit;
@@ -64,7 +77,7 @@ select {
 }
 .analysis p { margin: 0 0 10px; }
 .analysis p:last-child { margin-bottom: 0; }
-.analysis ul { margin: 0 0 10px 20px; padding: 0; }
+.analysis ul, .analysis ol { margin: 0 0 10px 20px; padding: 0; }
 .analysis li { margin: 4px 0; }
 .analysis strong { color: #ffffff; }
 .analysis code {

@@ -26,6 +26,12 @@ const express = require('express');
 const rateLimit = require('express-rate-limit');
 const { Pool } = require('pg');
 const Groq = require('groq-sdk');
+const {
+  resolveGroqBaseUrl,
+  parseAnalyzePayload,
+  formatGroqError,
+  analyzeWithGroq
+} = require('./lib/groq');
 
 const app = express();
 app.set('view engine', 'ejs');
@@ -166,7 +172,7 @@ try {
 }
 
 const servers = [
-  { id: 'current', name: process.env.SERVER_NAME || 'Serwer biezacy', url: null, configured: true }
+  { id: 'current', name: process.env.SERVER_NAME || 'Serwer bieżący', url: null, configured: true }
 ];
 for (const city of DEFAULT_CITIES) {
   const override = configuredServers.find((s) => s && s.id === city.id);
@@ -201,10 +207,10 @@ app.use('/api', (req, res, next) => {
 
 app.set('trust proxy', 1);
 
-const pingLimiter = rateLimit({ windowMs: 60 * 1000, max: 120, message: { error: 'Too many ping requests.' } });
-const downloadLimiter = rateLimit({ windowMs: 60 * 1000, max: 30, message: { error: 'Too many download tests.' } });
-const uploadLimiter = rateLimit({ windowMs: 60 * 1000, max: 20, message: { error: 'Too many upload tests.' } });
-const analyzeLimiter = rateLimit({ windowMs: 60 * 1000, max: 10, message: { error: 'Too many AI analysis requests.' } });
+const pingLimiter = rateLimit({ windowMs: 60 * 1000, max: 240, message: { error: 'Too many ping requests.' } });
+const downloadLimiter = rateLimit({ windowMs: 60 * 1000, max: 90, message: { error: 'Too many download tests.' } });
+const uploadLimiter = rateLimit({ windowMs: 60 * 1000, max: 60, message: { error: 'Too many upload tests.' } });
+const analyzeLimiter = rateLimit({ windowMs: 60 * 1000, max: 15, message: { error: 'Too many AI analysis requests.' } });
 const historyReadLimiter = rateLimit({ windowMs: 60 * 1000, max: 60, message: { error: 'Too many history requests.' } });
 const historyWriteLimiter = rateLimit({ windowMs: 60 * 1000, max: 30, message: { error: 'Too many history writes.' } });
 
@@ -222,26 +228,33 @@ app.get('/api/ping', pingLimiter, (req, res) => {
   res.json({ now: Date.now() });
 });
 
+// Pre-generated cryptographically random pool so high-speed multi-stream downloads
+// are not CPU-bound by per-chunk randomBytes calls while remaining uncompressible.
+const RANDOM_POOL_SIZE = 4 * 1024 * 1024;
+const RANDOM_POOL = crypto.randomBytes(RANDOM_POOL_SIZE);
+
 // Download: streams cryptographically random bytes.
 app.get('/api/download', downloadLimiter, async (req, res) => {
   const requested = Number(req.query.bytes);
-  const bytes = Math.min(Math.max(Number.isFinite(requested) ? requested : 16 * 1024 * 1024, 1 * 1024 * 1024), 64 * 1024 * 1024);
+  const bytes = Math.min(Math.max(Number.isFinite(requested) ? requested : 16 * 1024 * 1024, 512 * 1024), 128 * 1024 * 1024);
   res.setHeader('Content-Type', 'application/octet-stream');
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
   res.setHeader('Content-Length', String(bytes));
   res.setHeader('X-Content-Type-Options', 'nosniff');
 
   const chunkSize = 64 * 1024;
+  let offset = crypto.randomInt(0, RANDOM_POOL_SIZE);
   let remaining = bytes;
   let aborted = false;
   req.on('close', () => { aborted = true; });
 
   try {
     while (remaining > 0 && !aborted && !res.writableEnded) {
-      const size = Math.min(chunkSize, remaining);
-      const chunk = crypto.randomBytes(size);
+      const size = Math.min(chunkSize, remaining, RANDOM_POOL_SIZE - offset);
+      const chunk = RANDOM_POOL.subarray(offset, offset + size);
       const ok = res.write(chunk);
       remaining -= size;
+      offset = (offset + size) % RANDOM_POOL_SIZE;
       if (!ok) {
         await new Promise((resolve) => res.once('drain', resolve));
       }
@@ -276,62 +289,32 @@ app.post('/api/upload', uploadLimiter, (req, res) => {
 // AI analysis (backend only).
 app.post('/api/analyze', analyzeLimiter, async (req, res) => {
   const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey) {
-    return res.status(503).json({ error: 'GROQ_API_KEY is not configured.' });
+  if (!apiKey || apiKey === '<your_api_key_here>') {
+    return res.status(503).json({ error: 'GROQ_API_KEY nie jest skonfigurowany.' });
   }
-  const m = req.body || {};
-  const nums = {
-    download: Number(m.download),
-    upload: Number(m.upload),
-    ping: Number(m.ping),
-    jitter: Number(m.jitter),
-    loadedLatency: Number(m.loadedLatency)
-  };
-  for (const v of Object.values(nums)) {
-    if (!Number.isFinite(v) || v < 0) {
-      return res.status(400).json({ error: 'Invalid measurements.' });
-    }
+
+  const parsed = parseAnalyzePayload(req.body);
+  if (parsed.error) {
+    return res.status(400).json({ error: parsed.error });
   }
 
   const model = process.env.GROQ_MODEL || 'openai/gpt-oss-20b';
-  const apiUrl = process.env.GROQ_API_URL || 'https://api.groq.com/openai/v1/chat/completions';
-  let baseUrl = 'https://api.groq.com';
-  try { baseUrl = new URL(apiUrl).origin; } catch (e) {}
+  const fallbackModel = process.env.GROQ_FALLBACK_MODEL || 'llama-3.1-8b-instant';
+  const baseUrl = resolveGroqBaseUrl(process.env.GROQ_API_URL);
 
-  const groq = new Groq({ apiKey, baseURL: baseUrl });
-
-  const prompt = [
-    'Jestes asystentem oceniajacym jakosc polaczenia internetowego na podstawie rzeczywistych pomiarow.',
-    'Nie zmieniaj, nie zaokraglaj i nie przeliczaj podanych wartosci. Analizuj je takimi, jakie sa.',
-    'Kazde zdanie zaczynaj od nowej linii.',
-    'Odpowiedz po polsku, krotko (max 180 slow), w punktach:',
-    '- Ogolna ocena jakosci (bardzo dobra/dobra/srednia/slaba).',
-    '- Co oznaczaja wyniki dla uzytkownika.',
-    '- 2-3 praktyczne rekomendacje.',
-    '',
-    'Pomiary:',
-    `Pobieranie: ${nums.download} Mb/s`,
-    `Wysylanie: ${nums.upload} Mb/s`,
-    `Ping: ${nums.ping} ms`,
-    `Jitter: ${nums.jitter} ms`,
-    `Latencja pod obciazeniem: ${nums.loadedLatency} ms`
-  ].join('\n');
+  const groq = new Groq({ apiKey, baseURL: baseUrl, timeout: 20000, maxRetries: 1 });
 
   try {
-    const completion = await groq.chat.completions.create({
+    const result = await analyzeWithGroq({
+      groqClient: groq,
+      data: parsed.data,
       model,
-      messages: [
-        { role: 'system', content: 'Odpowiadasz po polsku, rzeczowo i krotko.' },
-        { role: 'user', content: prompt }
-      ],
-      temperature: 0.3,
-      max_tokens: 400
+      fallbackModel
     });
-    let analysis = completion?.choices?.[0]?.message?.content?.trim() || 'Brak odpowiedzi modelu.';
-    analysis = analysis.replace(/([.!?])\\s+(?=[A-ZĄĆĘŁŃÓŚŹŻ])/g, '$1\\n');
-    res.json({ analysis, model });
+    res.json(result);
   } catch (err) {
-    res.status(502).json({ error: 'Groq request failed: ' + (err.message || 'unknown error') });
+    const mapped = formatGroqError(err);
+    res.status(mapped.httpStatus).json({ error: mapped.error });
   }
 });
 
