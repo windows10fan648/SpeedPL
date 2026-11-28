@@ -1,21 +1,49 @@
-/* global Chart, SpeedPLDiagnostics */
+/* global Chart, SpeedPLDiagnostics, SpeedPLI18n */
 const D = window.SpeedPLDiagnostics;
+const I18n = window.SpeedPLI18n;
 const LOCAL_HISTORY_KEY = 'speedpl_history_v1';
+const LANG_STORAGE_KEY = 'speedpl_lang';
 const GAUGE_ARC_LEN = 469.14;
 const GAUGE_STOPS = [0, 25, 100, 250, 500, 1000, 2000];
 
+function resolveInitialLang() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const qLang = params.get('lang');
+    if (qLang && I18n.SUPPORTED_LANGS.includes(String(qLang).toLowerCase().slice(0, 2))) {
+      const normalized = I18n.normalizeLang(qLang);
+      localStorage.setItem(LANG_STORAGE_KEY, normalized);
+      return normalized;
+    }
+    const saved = localStorage.getItem(LANG_STORAGE_KEY);
+    if (saved) return I18n.normalizeLang(saved);
+  } catch (e) {}
+  return 'pl';
+}
+
 const state = {
+  lang: resolveInitialLang(),
   running: false,
   stopped: false,
+  hasFinishedRun: false,
+  hasPingStats: false,
+  phase: 'idle',
   preset: 'full', // 'full' | 'quick' | 'latency'
   chartMode: 'throughput', // 'throughput' | 'ping'
+  statusKey: 'statusReady',
+  statusVars: null,
+  statusRawError: '',
+  gaugeStateKey: 'phaseIdle',
+  gaugeValue: 0,
+  gaugeUnitKey: 'unitMbps',
+  gaugeColorMode: 'download',
   abortController: null,
   phaseControllers: new Set(),
   activeXhrs: new Set(),
   elapsedTimer: null,
   runStartedAt: 0,
   serverId: 'current',
-  serverName: 'Serwer bieżący',
+  serverName: 'Węzeł główny',
   streams: 4,
   downloadMbps: 0,
   uploadMbps: 0,
@@ -34,11 +62,17 @@ const state = {
   downloadSamples: [],
   uploadSamples: [],
   lastAnalysisMarkdown: '',
+  lastAnalysisMeta: null,
+  lastProbeResults: null,
   chart: null
 };
 
 const el = (id) => document.getElementById(id);
 const statusText = el('statusText');
+
+function t(key, vars) {
+  return I18n.t(state.lang, key, vars);
+}
 
 function fmt(v) {
   return D.formatMetric(v);
@@ -48,6 +82,15 @@ function setMetric(id, value) {
   const node = el(id);
   if (!node) return;
   node.textContent = fmt(value);
+}
+
+function setStatus(key, vars = null, rawError = '') {
+  state.statusKey = key;
+  state.statusVars = vars;
+  state.statusRawError = rawError;
+  if (statusText) {
+    statusText.textContent = rawError ? rawError : t(key, vars);
+  }
 }
 
 function setProgress(pct, mode = 'download') {
@@ -72,20 +115,25 @@ function mbpsToGaugeRatio(mbps) {
   return 1;
 }
 
-function setGauge(value, unit = 'Mb/s', phaseLabel = 'Gotowy', mode = 'download') {
+function setGauge(value, unitKey = 'unitMbps', phaseKey = 'phaseIdle', mode = 'download') {
+  state.gaugeValue = value;
+  state.gaugeUnitKey = unitKey;
+  state.gaugeStateKey = phaseKey;
+  state.gaugeColorMode = mode;
+
   const arc = el('gaugeArc');
   const valNode = el('gaugeValue');
   const unitNode = el('gaugeUnit');
   const phaseNode = el('gaugePhaseLabel');
 
-  if (phaseNode) phaseNode.textContent = phaseLabel;
-  if (unitNode) unitNode.textContent = unit;
+  if (phaseNode) phaseNode.textContent = t(phaseKey);
+  if (unitNode) unitNode.textContent = t(unitKey);
   if (valNode) {
     valNode.textContent = Number.isFinite(value) && value > 0 ? fmt(value) : '0.00';
   }
   if (arc) {
     arc.setAttribute('stroke', mode === 'upload' ? 'url(#gaugeUploadGrad)' : 'url(#gaugeDownloadGrad)');
-    const ratio = unit === 'ms'
+    const ratio = unitKey === 'unitMs'
       ? Math.min(1, Math.max(0, (value || 0) / 150))
       : mbpsToGaugeRatio(value || 0);
     const offset = GAUGE_ARC_LEN * (1 - ratio);
@@ -94,6 +142,7 @@ function setGauge(value, unit = 'Mb/s', phaseLabel = 'Gotowy', mode = 'download'
 }
 
 function setPhase(activePhase) {
+  state.phase = activePhase;
   const order = ['idle', 'ping', 'download', 'upload', 'done'];
   const activeIdx = order.indexOf(activePhase);
   const steps = document.querySelectorAll('#phaseStepper .phase-step');
@@ -114,8 +163,9 @@ function serverBase() {
 function selectedServerName() {
   const select = el('serverSelect');
   const option = select.options[select.selectedIndex];
-  const raw = option ? option.textContent : 'Węzeł główny';
-  return raw.replace(/\s*\(\d+(?:\.\d+)?\s*ms\)$/, '');
+  if (option?.dataset?.baseName) return option.dataset.baseName;
+  const raw = option ? option.textContent : t('defaultNodeName');
+  return raw.replace(/\s*\([^)]*\)$/, '');
 }
 
 function endpoint(path) {
@@ -171,6 +221,34 @@ async function copyToClipboard(text) {
 
 let cachedServerInfo = null;
 
+function renderServerOptionsText() {
+  const select = el('serverSelect');
+  if (!select) return;
+  const summaries = [];
+
+  for (const opt of Array.from(select.options)) {
+    const baseName = opt.dataset.baseName || opt.textContent.replace(/\s*\([^)]*\)$/, '');
+    opt.dataset.baseName = baseName;
+
+    if (opt.disabled) {
+      opt.textContent = `${baseName} ${t('needsConfig')}`;
+    } else if (opt.dataset.probeMs) {
+      opt.textContent = `${baseName} (${opt.dataset.probeMs} ms)`;
+      summaries.push(`${baseName}: ${opt.dataset.probeMs} ms`);
+    } else if (opt.dataset.probeFailed === 'true') {
+      opt.textContent = `${baseName} (${t('noResponse')})`;
+      summaries.push(`${baseName}: ${t('noResponse')}`);
+    } else {
+      opt.textContent = baseName;
+    }
+  }
+
+  const hint = el('serverProbeResult');
+  if (hint && state.lastProbeResults) {
+    hint.textContent = summaries.join(' · ');
+  }
+}
+
 function renderServerSpecs() {
   const specsEl = el('serverSpecsLine');
   const select = el('serverSelect');
@@ -184,11 +262,11 @@ function renderServerSpecs() {
   const provider = opt.dataset.provider || (opt.value === 'current' ? cachedServerInfo?.provider : '');
   const specs = opt.dataset.specs || (opt.value === 'current' && cachedServerInfo ? `${cachedServerInfo.protocol} · ${cachedServerInfo.cpuCount} vCPU · ${cachedServerInfo.randomPoolMb} MB CSPRNG` : '');
 
-  if (host) parts.push(`Host: ${host}`);
+  if (host) parts.push(`${t('hostPrefix')}: ${host}`);
   else if (opt.dataset.url) {
-    try { parts.push(`Host: ${new URL(opt.dataset.url).host}`); } catch (e) {}
+    try { parts.push(`${t('hostPrefix')}: ${new URL(opt.dataset.url).host}`); } catch (e) {}
   }
-  if (location) parts.push(`Lokalizacja: ${location}`);
+  if (location) parts.push(`${t('locationPrefix')}: ${location}`);
   if (provider) parts.push(provider);
   if (specs) parts.push(specs);
 
@@ -209,8 +287,8 @@ async function loadServers() {
     for (const s of data.servers) {
       const opt = document.createElement('option');
       opt.value = s.id;
-      opt.textContent = s.configured ? s.name : s.name + ' (wymaga konfiguracji)';
       opt.dataset.baseName = s.name;
+      opt.textContent = s.configured ? s.name : `${s.name} ${t('needsConfig')}`;
       opt.disabled = !s.configured;
       opt.dataset.url = s.url || '';
       opt.dataset.host = s.host || '';
@@ -225,9 +303,10 @@ async function loadServers() {
       const current = data.servers.find((s) => s.id === 'current');
       if (current) select.value = 'current';
     }
+    renderServerOptionsText();
     renderServerSpecs();
   } catch (e) {
-    statusText.textContent = 'Nie udało się pobrać listy serwerów.';
+    setStatus('statusServerErr');
   }
 }
 
@@ -237,11 +316,10 @@ async function probeServers() {
   const select = el('serverSelect');
   if (!btn || !select) return;
   btn.disabled = true;
-  if (hint) hint.textContent = 'Sprawdzanie opóźnień serwerów...';
+  if (hint) hint.textContent = t('statusProbing');
 
   try {
     const options = Array.from(select.options).filter((o) => !o.disabled);
-    const summaries = [];
     for (const opt of options) {
       const base = (opt.dataset.url || '').replace(/\/+$/, '');
       const url = (base ? base + '/api/ping' : '/api/ping') + '?probe=1&r=' + Math.random();
@@ -253,19 +331,18 @@ async function probeServers() {
           if (res.ok) samples.push(now() - t0);
         } catch (e) {}
       }
-      const baseName = opt.dataset.baseName || opt.textContent.replace(/\s*\(\d+(?:\.\d+)?\s*ms\)$/, '');
-      opt.dataset.baseName = baseName;
       if (samples.length) {
         samples.sort((a, b) => a - b);
         const median = samples[Math.floor(samples.length / 2)];
-        opt.textContent = `${baseName} (${fmt(median)} ms)`;
-        summaries.push(`${baseName}: ${fmt(median)} ms`);
+        opt.dataset.probeMs = fmt(median);
+        delete opt.dataset.probeFailed;
       } else {
-        opt.textContent = `${baseName} (brak odpowiedzi)`;
-        summaries.push(`${baseName}: brak odpowiedzi`);
+        delete opt.dataset.probeMs;
+        opt.dataset.probeFailed = 'true';
       }
     }
-    if (hint) hint.textContent = summaries.join(' · ');
+    state.lastProbeResults = true;
+    renderServerOptionsText();
   } finally {
     btn.disabled = false;
   }
@@ -290,7 +367,7 @@ async function measurePing(count = 20) {
       if (!res.ok) throw new Error('Ping HTTP ' + res.status);
       const rtt = now() - start;
       rtts.push(rtt);
-      setGauge(rtt, 'ms', 'Pomiar pingu', 'download');
+      setGauge(rtt, 'unitMs', 'gaugePing', 'download');
     } catch (e) {
       if (e.name === 'AbortError') throw e;
       failures++;
@@ -370,29 +447,29 @@ async function measureDownload(sizeSpec, streams = 4) {
 
   const sampler = setInterval(() => {
     if (state.stopped || phaseTimedOut) return;
-    const t = now();
+    const t0 = now();
     const totalReceived = streamBytes.reduce((a, b) => a + b, 0);
-    const dt = (t - lastSampleTime) / 1000;
+    const dt = (t0 - lastSampleTime) / 1000;
     const db = totalReceived - lastSampleBytes;
     if (dt > 0) {
       const instantMbps = D.computeMbps(db, dt);
       smoothedMbps = smoothedMbps > 0
         ? smoothedMbps * 0.45 + instantMbps * 0.55
         : instantMbps;
-      const elapsedSec = (t - start) / 1000;
+      const elapsedSec = (t0 - start) / 1000;
       const avgMbps = D.computeMbps(totalReceived, elapsedSec);
       const displayMbps = instantMbps > 0 ? smoothedMbps : avgMbps;
 
       state.downloadSamples.push({ t: elapsedSec, mbps: instantMbps > 0 ? instantMbps : avgMbps });
       setMetric('downloadValue', displayMbps);
-      setGauge(displayMbps, 'Mb/s', 'Pobieranie', 'download');
+      setGauge(displayMbps, 'unitMbps', 'phaseDownload', 'download');
 
       const pct = isAuto
-        ? Math.min(1, (t - start) / targetDurationMs)
+        ? Math.min(1, (t0 - start) / targetDurationMs)
         : Math.min(1, totalReceived / sizeSpec.bytes);
       setProgress(15 + pct * 40, 'download');
 
-      lastSampleTime = t;
+      lastSampleTime = t0;
       lastSampleBytes = totalReceived;
       if (state.chartMode === 'throughput') updateChart();
     }
@@ -407,7 +484,7 @@ async function measureDownload(sizeSpec, streams = 4) {
             { cache: 'no-store', signal: phaseCtrl.signal }
           );
           if (!response.ok || !response.body) {
-            throw new Error('Błąd pobierania (HTTP ' + response.status + ')');
+            throw new Error(t('statusDlHttpErr', { status: response.status }));
           }
           const reader = response.body.getReader();
           while (!state.stopped && !phaseTimedOut) {
@@ -490,13 +567,13 @@ function uploadSingleStream(blob, idx, onProgress, phaseSignal) {
           resolve(blob.size);
         }
       } else {
-        reject(new Error('Błąd wysyłania (HTTP ' + xhr.status + ')'));
+        reject(new Error(t('statusUlHttpErr', { status: xhr.status })));
       }
     };
 
     xhr.onerror = () => {
       cleanup();
-      reject(new Error('Błąd sieci podczas wysyłania'));
+      reject(new Error(t('statusUlNetErr')));
     };
 
     xhr.onabort = () => {
@@ -518,7 +595,6 @@ async function measureUpload(sizeSpec, streams = 4) {
   const isAuto = sizeSpec.mode === 'auto';
   const targetDurationMs = isAuto ? sizeSpec.durationMs : null;
 
-  // Reusable 4 MB random buffer; Blobs reference slices with zero extra memory copy.
   const baseBuffer = randomBytes(4 * 1024 * 1024);
   function makeUploadBlob(targetBytes) {
     const parts = [];
@@ -532,7 +608,7 @@ async function measureUpload(sizeSpec, streams = 4) {
   }
 
   const estStreamBytesPerSec = ((state.downloadMbps || 25) * 125000) / Math.max(1, streams);
-  let adaptiveChunkBytes = Math.max(512 * 1024, Math.min(32 * 1024 * 1024, Math.round(estStreamBytesPerSec * 1.2)));
+  const adaptiveChunkBytes = Math.max(512 * 1024, Math.min(32 * 1024 * 1024, Math.round(estStreamBytesPerSec * 1.2)));
   const fixedPerStream = isAuto ? 0 : Math.ceil(sizeSpec.bytes / streams);
 
   const streamCompleted = new Array(streams).fill(0);
@@ -558,29 +634,29 @@ async function measureUpload(sizeSpec, streams = 4) {
 
   const sampler = setInterval(() => {
     if (state.stopped || phaseTimedOut) return;
-    const t = now();
+    const t0 = now();
     const totalSent = totalTransferredSoFar();
-    const dt = (t - lastSampleTime) / 1000;
+    const dt = (t0 - lastSampleTime) / 1000;
     const db = Math.max(0, totalSent - lastSampleBytes);
     if (dt > 0) {
       const instantMbps = D.computeMbps(db, dt);
       smoothedMbps = smoothedMbps > 0
         ? smoothedMbps * 0.45 + instantMbps * 0.55
         : instantMbps;
-      const elapsedSec = (t - start) / 1000;
+      const elapsedSec = (t0 - start) / 1000;
       const avgMbps = D.computeMbps(totalSent, elapsedSec);
       const displayMbps = instantMbps > 0 ? smoothedMbps : avgMbps;
 
       state.uploadSamples.push({ t: elapsedSec, mbps: instantMbps > 0 ? instantMbps : avgMbps });
       setMetric('uploadValue', displayMbps);
-      setGauge(displayMbps, 'Mb/s', 'Wysyłanie', 'upload');
+      setGauge(displayMbps, 'unitMbps', 'phaseUpload', 'upload');
 
       const pct = isAuto
-        ? Math.min(1, (t - start) / targetDurationMs)
+        ? Math.min(1, (t0 - start) / targetDurationMs)
         : Math.min(1, totalSent / sizeSpec.bytes);
       setProgress(55 + pct * 40, 'upload');
 
-      lastSampleTime = t;
+      lastSampleTime = t0;
       lastSampleBytes = totalSent;
       if (state.chartMode === 'throughput') updateChart();
     }
@@ -660,7 +736,7 @@ function initChart() {
       labels: [],
       datasets: [
         {
-          label: 'Pobieranie (Mb/s)',
+          label: t('chartDlLabel'),
           data: [],
           borderColor: '#3b82f6',
           backgroundColor: 'rgba(59, 130, 246, 0.12)',
@@ -670,7 +746,7 @@ function initChart() {
           pointRadius: 1.5
         },
         {
-          label: 'Wysyłanie (Mb/s)',
+          label: t('chartUlLabel'),
           data: [],
           borderColor: '#10b981',
           backgroundColor: 'rgba(16, 185, 129, 0.1)',
@@ -688,13 +764,13 @@ function initChart() {
       interaction: { mode: 'index', intersect: false },
       scales: {
         x: {
-          title: { display: true, text: 'Czas fazy (s)', color: '#94a3b8' },
+          title: { display: true, text: t('chartPhaseTime'), color: '#94a3b8' },
           ticks: { color: '#94a3b8' },
           grid: { color: 'rgba(36, 48, 71, 0.5)' }
         },
         y: {
           beginAtZero: true,
-          title: { display: true, text: 'Mb/s', color: '#94a3b8' },
+          title: { display: true, text: t('unitMbps'), color: '#94a3b8' },
           ticks: { color: '#94a3b8' },
           grid: { color: 'rgba(36, 48, 71, 0.5)' }
         }
@@ -715,7 +791,7 @@ function updateChart() {
     state.chart.data.labels = samples.map((_, i) => `#${i + 1}`);
     state.chart.data.datasets = [
       {
-        label: 'RTT próby (ms)',
+        label: t('chartRttLabel'),
         data: samples.map((v) => Number(v.toFixed(2))),
         backgroundColor: 'rgba(59, 130, 246, 0.65)',
         borderColor: '#3b82f6',
@@ -723,8 +799,8 @@ function updateChart() {
         borderRadius: 4
       }
     ];
-    state.chart.options.scales.x.title.text = 'Numer próby';
-    state.chart.options.scales.y.title.text = 'ms';
+    state.chart.options.scales.x.title.text = t('chartSampleNum');
+    state.chart.options.scales.y.title.text = t('unitMs');
     state.chart.update();
     return;
   }
@@ -733,13 +809,13 @@ function updateChart() {
   const maxLen = Math.max(state.downloadSamples.length, state.uploadSamples.length);
   const labels = [];
   for (let i = 0; i < maxLen; i++) {
-    const t = state.downloadSamples[i]?.t ?? state.uploadSamples[i]?.t ?? (i + 1) * 0.2;
-    labels.push(t.toFixed(1));
+    const tVal = state.downloadSamples[i]?.t ?? state.uploadSamples[i]?.t ?? (i + 1) * 0.2;
+    labels.push(tVal.toFixed(1));
   }
   state.chart.data.labels = labels;
   state.chart.data.datasets = [
     {
-      label: 'Pobieranie (Mb/s)',
+      label: t('chartDlLabel'),
       data: state.downloadSamples.map((s) => Number(s.mbps.toFixed(2))),
       borderColor: '#3b82f6',
       backgroundColor: 'rgba(59, 130, 246, 0.12)',
@@ -749,7 +825,7 @@ function updateChart() {
       pointRadius: 1.5
     },
     {
-      label: 'Wysyłanie (Mb/s)',
+      label: t('chartUlLabel'),
       data: state.uploadSamples.map((s) => Number(s.mbps.toFixed(2))),
       borderColor: '#10b981',
       backgroundColor: 'rgba(16, 185, 129, 0.1)',
@@ -759,8 +835,8 @@ function updateChart() {
       pointRadius: 1.5
     }
   ];
-  state.chart.options.scales.x.title.text = 'Czas fazy (s)';
-  state.chart.options.scales.y.title.text = 'Mb/s';
+  state.chart.options.scales.x.title.text = t('chartPhaseTime');
+  state.chart.options.scales.y.title.text = t('unitMbps');
   state.chart.update();
 }
 
@@ -777,14 +853,28 @@ function renderLocalDiagnostics() {
   const bloatSummary = el('bufferbloatSummary');
   const matrix = el('useCaseMatrix');
 
-  const bloat = D.computeBufferbloatGrade(state.ping, state.loadedLatency);
+  if (!state.hasFinishedRun) {
+    if (gradeBadge) {
+      gradeBadge.textContent = t('gradeLabel', { grade: '--' });
+      gradeBadge.className = 'grade-readout mono';
+    }
+    if (bloatSummary) {
+      bloatSummary.textContent = t('bloatPrompt');
+    }
+    if (matrix) {
+      matrix.innerHTML = `<div class="use-case-empty">${escapeHtml(t('useCaseEmpty'))}</div>`;
+    }
+    return;
+  }
+
+  const bloat = D.computeBufferbloatGrade(state.ping, state.loadedLatency, state.lang);
   if (gradeBadge) {
-    gradeBadge.textContent = `Klasa: ${bloat.grade}`;
+    gradeBadge.textContent = t('gradeLabel', { grade: bloat.grade });
     gradeBadge.className = `grade-readout mono ${bloat.status}`;
   }
   if (bloatSummary) {
     if (bloat.deltaMs !== null) {
-      bloatSummary.textContent = `${bloat.label} (+${fmt(bloat.deltaMs)} ms pod obciążeniem) — ${bloat.detail}`;
+      bloatSummary.textContent = `${bloat.label} (+${fmt(bloat.deltaMs)} ${t('unitMs')}) — ${bloat.detail}`;
     } else {
       bloatSummary.textContent = bloat.detail;
     }
@@ -798,9 +888,9 @@ function renderLocalDiagnostics() {
       jitter: state.jitter,
       packetLoss: state.packetLoss,
       loadedLatency: state.loadedLatency
-    });
+    }, state.lang);
     if (!items.length) {
-      matrix.innerHTML = '<div class="use-case-empty">Brak wyników pomiaru do oceny.</div>';
+      matrix.innerHTML = `<div class="use-case-empty">${escapeHtml(t('useCaseEmpty'))}</div>`;
       return;
     }
     matrix.innerHTML = items.map((item) => `
@@ -810,6 +900,54 @@ function renderLocalDiagnostics() {
         <span class="use-case-reason">${escapeHtml(item.reason)}</span>
       </div>
     `).join('');
+  }
+}
+
+function renderMetricDetails() {
+  if (!state.running && !state.hasPingStats && !state.hasFinishedRun) {
+    el('downloadDetail').textContent = t('detailWaiting');
+    el('uploadDetail').textContent = t('detailWaiting');
+    el('pingDetail').textContent = t('detailPingIdle');
+    el('jitterDetail').textContent = t('detailJitterIdle');
+    el('loadedDetail').textContent = t('detailLoadedIdle');
+    return;
+  }
+
+  if (state.hasPingStats && Number.isFinite(state.pingMin) && Number.isFinite(state.pingMax)) {
+    el('pingDetail').textContent = `min ${fmt(state.pingMin)} · P95 ${fmt(state.pingP95)} · max ${fmt(state.pingMax)} ${t('unitMs')}`;
+    el('jitterDetail').textContent = t('detailSampleLoss', { loss: state.packetLoss });
+  } else if (state.running) {
+    el('pingDetail').textContent = t('detailPingIdle');
+    el('jitterDetail').textContent = t('detailJitterIdle');
+  }
+
+  if (state.hasFinishedRun && state.preset === 'latency') {
+    el('downloadDetail').textContent = t('detailSkippedPing');
+    el('uploadDetail').textContent = t('detailSkippedPing');
+    el('loadedDetail').textContent = t('detailLoadedIdle');
+    return;
+  }
+
+  el('downloadDetail').textContent = state.downloadBytes > 0
+    ? t('detailTransferred', { mb: formatMB(state.downloadBytes) })
+    : (state.running ? t('detailMeasuring') : t('detailWaiting'));
+
+  el('uploadDetail').textContent = state.uploadBytes > 0
+    ? t('detailUploaded', { mb: formatMB(state.uploadBytes) })
+    : (state.running ? t('detailMeasuring') : t('detailWaiting'));
+
+  if (Number.isFinite(state.loadedLatency) && Number.isFinite(state.ping)) {
+    if (state.loadedUploadLatency !== null) {
+      const bloatInfo = D.computeBufferbloatGrade(state.ping, state.loadedLatency, state.lang);
+      const parts = [t('detailLoadedIncrease', { delta: fmt(bloatInfo.deltaMs), grade: bloatInfo.grade })];
+      if (state.loadedDownloadLatency !== null) parts.push(t('detailLoadedDlShort', { dl: fmt(state.loadedDownloadLatency) }));
+      parts.push(t('detailLoadedUlShort', { ul: fmt(state.loadedUploadLatency) }));
+      el('loadedDetail').textContent = parts.join(' · ');
+    } else if (state.loadedDownloadLatency !== null) {
+      el('loadedDetail').textContent = t('detailLoadedDlOnly', { dl: fmt(state.loadedDownloadLatency) });
+    }
+  } else {
+    el('loadedDetail').textContent = t('detailLoadedIdle');
   }
 }
 
@@ -851,6 +989,8 @@ async function runTest() {
   if (state.running) return;
   state.running = true;
   state.stopped = false;
+  state.hasFinishedRun = false;
+  state.hasPingStats = false;
   state.abortController = new AbortController();
   state.serverId = el('serverSelect').value;
   state.serverName = selectedServerName();
@@ -871,7 +1011,7 @@ async function runTest() {
 
   resetChart();
   setProgress(0, 'download');
-  setGauge(0, 'Mb/s', 'Inicjalizacja', 'download');
+  setGauge(0, 'unitMbps', 'gaugeInit', 'download');
   setPhase('ping');
 
   setMetric('downloadValue', null);
@@ -879,11 +1019,8 @@ async function runTest() {
   setMetric('pingValue', null);
   setMetric('jitterValue', null);
   setMetric('loadedValue', null);
-  el('downloadDetail').textContent = 'Oczekuje na pomiar';
-  el('uploadDetail').textContent = 'Oczekuje na pomiar';
-  el('pingDetail').textContent = 'min · P95 · max';
-  el('jitterDetail').textContent = 'Zmienność RTT';
-  el('loadedDetail').textContent = 'Wzrost · Pob. · Wys.';
+  renderMetricDetails();
+  renderLocalDiagnostics();
 
   el('startBtn').disabled = true;
   el('stopBtn').disabled = false;
@@ -893,7 +1030,7 @@ async function runTest() {
 
   try {
     const pingCount = Number(el('pingCountSelect')?.value || 20);
-    statusText.textContent = `Mierzenie pingu i jittera (${pingCount} prób)...`;
+    setStatus('statusMeasuringPing', { count: pingCount });
     const pingResult = await measurePing(pingCount);
     state.ping = pingResult.ping;
     state.pingMin = pingResult.min;
@@ -902,19 +1039,17 @@ async function runTest() {
     state.packetLoss = pingResult.packetLoss;
     state.jitter = pingResult.jitter;
     state.pingSamples = pingResult.samples;
+    state.hasPingStats = true;
 
     setMetric('pingValue', state.ping);
     setMetric('jitterValue', state.jitter);
-    if (Number.isFinite(state.pingMin) && Number.isFinite(state.pingMax)) {
-      el('pingDetail').textContent = `min ${fmt(state.pingMin)} · P95 ${fmt(state.pingP95)} · max ${fmt(state.pingMax)} ms`;
-      el('jitterDetail').textContent = `Strata prób: ${state.packetLoss}%`;
-    }
+    renderMetricDetails();
     if (state.chartMode === 'ping') updateChart();
 
     if (state.preset !== 'latency') {
       checkAborted();
       setPhase('download');
-      statusText.textContent = `Test pobierania (${state.streams} strumienie)...`;
+      setStatus('statusMeasuringDl', { streams: state.streams });
       const dlSpec = parseSizeSpec(el('sizeSelect').value);
       const dl = await measureDownload(dlSpec, state.streams);
       state.downloadMbps = dl.mbps;
@@ -922,15 +1057,12 @@ async function runTest() {
       state.loadedDownloadLatency = Number.isFinite(dl.loadedLatency) ? dl.loadedLatency : null;
       state.loadedLatency = dl.loadedLatency;
       setMetric('downloadValue', state.downloadMbps);
-      el('downloadDetail').textContent = `Przesłano ${formatMB(state.downloadBytes)}`;
       setMetric('loadedValue', state.loadedLatency);
-      if (state.loadedDownloadLatency !== null) {
-        el('loadedDetail').textContent = `Pobieranie: ${fmt(state.loadedDownloadLatency)} ms`;
-      }
+      renderMetricDetails();
 
       checkAborted();
       setPhase('upload');
-      statusText.textContent = `Test wysyłania (${state.streams} strumienie)...`;
+      setStatus('statusMeasuringUl', { streams: state.streams });
       const ulSpec = parseSizeSpec(el('uploadSizeSelect').value);
       const ul = await measureUpload(ulSpec, state.streams);
       state.uploadMbps = ul.mbps;
@@ -943,26 +1075,17 @@ async function runTest() {
         : NaN;
 
       setMetric('uploadValue', state.uploadMbps);
-      el('uploadDetail').textContent = `Wysłano ${formatMB(state.uploadBytes)}`;
       setMetric('loadedValue', state.loadedLatency);
-
-      if (Number.isFinite(state.loadedLatency) && Number.isFinite(state.ping)) {
-        const bloatInfo = D.computeBufferbloatGrade(state.ping, state.loadedLatency);
-        const parts = [`Wzrost +${fmt(bloatInfo.deltaMs)} ms (${bloatInfo.grade})`];
-        if (state.loadedDownloadLatency !== null) parts.push(`Pob: ${fmt(state.loadedDownloadLatency)} ms`);
-        if (state.loadedUploadLatency !== null) parts.push(`Wys: ${fmt(state.loadedUploadLatency)} ms`);
-        el('loadedDetail').textContent = parts.join(' · ');
-      }
-      setGauge(state.downloadMbps, 'Mb/s', 'Pobieranie (wynik)', 'download');
+      setGauge(state.downloadMbps, 'unitMbps', 'gaugeDownloadResult', 'download');
     } else {
-      el('downloadDetail').textContent = 'Pominięto (tryb ping)';
-      el('uploadDetail').textContent = 'Pominięto (tryb ping)';
-      setGauge(state.ping, 'ms', 'Ping (mediana)', 'download');
+      setGauge(state.ping, 'unitMs', 'gaugePingResult', 'download');
     }
 
+    state.hasFinishedRun = true;
+    renderMetricDetails();
     setProgress(100, 'download');
     setPhase('done');
-    statusText.textContent = 'Test zakończony.';
+    setStatus('statusFinished');
     el('analyzeBtn').disabled = state.preset === 'latency';
     el('copySummaryBtn').disabled = false;
 
@@ -976,11 +1099,11 @@ async function runTest() {
     }
   } catch (e) {
     if (e.name === 'AbortError' || e.message === 'STOPPED' || state.stopped) {
-      statusText.textContent = 'Test zatrzymany.';
+      setStatus('statusStopped');
       setPhase('idle');
-      setGauge(0, 'Mb/s', 'Zatrzymano', 'download');
+      setGauge(0, 'unitMbps', 'gaugeStopped', 'download');
     } else {
-      statusText.textContent = 'Błąd testu: ' + (e.message || e);
+      setStatus('statusTestErr', { err: e.message || e });
       setPhase('idle');
     }
   } finally {
@@ -1003,7 +1126,7 @@ function saveLocalHistory(entry) {
 
 async function saveHistory() {
   const isLatencyOnly = state.preset === 'latency';
-  const bloat = D.computeBufferbloatGrade(state.ping, state.loadedLatency);
+  const bloat = D.computeBufferbloatGrade(state.ping, state.loadedLatency, state.lang);
   const payload = {
     id: 'local-' + Date.now(),
     created_at: new Date().toISOString(),
@@ -1023,6 +1146,7 @@ async function saveHistory() {
     bufferbloatGrade: bloat.grade,
     downloadBytes: state.downloadBytes,
     uploadBytes: state.uploadBytes,
+    sourceType: 'local',
     source: 'Lokalnie'
   };
 
@@ -1040,23 +1164,35 @@ async function saveHistory() {
 }
 
 async function copySummary() {
-  const bloat = D.computeBufferbloatGrade(state.ping, state.loadedLatency);
+  const bloat = D.computeBufferbloatGrade(state.ping, state.loadedLatency, state.lang);
   const lines = [
-    `SpeedPL — Wynik pomiaru (${new Date().toLocaleString('pl-PL')})`,
-    `Serwer: ${state.serverName}`,
-    `Pobieranie: ${fmt(state.downloadMbps)} Mb/s`,
-    `Wysyłanie: ${fmt(state.uploadMbps)} Mb/s`,
-    `Ping: ${fmt(state.ping)} ms (min ${fmt(state.pingMin)} / P95 ${fmt(state.pingP95)} / max ${fmt(state.pingMax)})`,
-    `Jitter: ${fmt(state.jitter)} ms | Strata: ${state.packetLoss}%`,
-    `Latencja pod obciążeniem: ${fmt(state.loadedLatency)} ms (Bufferbloat: ${bloat.grade})`
+    t('summaryHeading', { date: new Date().toLocaleString(t('locale')) }),
+    t('summaryServer', { server: state.serverName }),
+    t('summaryDownload', { val: fmt(state.downloadMbps) }),
+    t('summaryUpload', { val: fmt(state.uploadMbps) }),
+    t('summaryPing', { val: fmt(state.ping), min: fmt(state.pingMin), p95: fmt(state.pingP95), max: fmt(state.pingMax) }),
+    t('summaryJitter', { jitter: fmt(state.jitter), loss: state.packetLoss }),
+    t('summaryLoaded', { val: fmt(state.loadedLatency), grade: bloat.grade })
   ];
   const ok = await copyToClipboard(lines.join('\n'));
   if (ok) {
     const btn = el('copySummaryBtn');
-    const prev = btn.textContent;
-    btn.textContent = 'Skopiowano!';
-    setTimeout(() => { btn.textContent = prev; }, 1500);
+    btn.textContent = t('btnCopied');
+    setTimeout(() => { btn.textContent = t('btnCopyResult'); }, 1500);
   }
+}
+
+function renderAnalysisMeta() {
+  const meta = el('analysisMeta');
+  if (!meta) return;
+  if (!state.lastAnalysisMeta) {
+    meta.textContent = '';
+    return;
+  }
+  const { model, fallbackUsed, durationMs } = state.lastAnalysisMeta;
+  const fallbackNote = fallbackUsed ? ' ' + t('aiMetaFallback') : '';
+  const timeNote = Number.isFinite(durationMs) ? ` · ${durationMs} ms` : '';
+  meta.textContent = `${t('aiMetaModel')}: ${model || 'Groq'}${fallbackNote}${timeNote}`;
 }
 
 async function analyze() {
@@ -1065,8 +1201,9 @@ async function analyze() {
   const meta = el('analysisMeta');
   btn.disabled = true;
   copyBtn.disabled = true;
+  state.lastAnalysisMeta = null;
   meta.textContent = '';
-  el('analysisText').textContent = 'Analizowanie wyników przez Groq AI...';
+  el('analysisText').textContent = t('aiRunning');
 
   try {
     const res = await fetch('/api/analyze', {
@@ -1088,20 +1225,24 @@ async function analyze() {
         uploadBytes: state.uploadBytes,
         streams: state.streams,
         serverName: state.serverName,
-        useCase: el('useCaseSelect')?.value || 'general'
+        useCase: el('useCaseSelect')?.value || 'general',
+        lang: state.lang
       })
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Błąd analizy');
+    if (!res.ok) throw new Error(data.error || t('statusAnalyzeErr'));
     state.lastAnalysisMarkdown = data.analysis || '';
-    const fallbackNote = data.fallbackUsed ? ' (model zapasowy)' : '';
-    const timeNote = Number.isFinite(data.durationMs) ? ` · ${data.durationMs} ms` : '';
-    meta.textContent = `Model: ${data.model || 'Groq'}${fallbackNote}${timeNote}`;
+    state.lastAnalysisMeta = {
+      model: data.model,
+      fallbackUsed: !!data.fallbackUsed,
+      durationMs: data.durationMs
+    };
+    renderAnalysisMeta();
     el('analysisText').innerHTML = renderMarkdown(state.lastAnalysisMarkdown);
     copyBtn.disabled = !state.lastAnalysisMarkdown;
   } catch (e) {
     state.lastAnalysisMarkdown = '';
-    el('analysisText').innerHTML = renderMarkdown('Błąd: ' + (e.message || e));
+    el('analysisText').innerHTML = renderMarkdown(`${t('statusAnalyzeErr')}: ${e.message || e}`);
   } finally {
     btn.disabled = false;
   }
@@ -1111,9 +1252,8 @@ async function copyAnalysis() {
   const ok = await copyToClipboard(state.lastAnalysisMarkdown);
   if (ok) {
     const btn = el('copyAnalysisBtn');
-    const prev = btn.textContent;
-    btn.textContent = 'Skopiowano!';
-    setTimeout(() => { btn.textContent = prev; }, 1500);
+    btn.textContent = t('btnCopied');
+    setTimeout(() => { btn.textContent = t('aiCopyBtn'); }, 1500);
   }
 }
 
@@ -1248,12 +1388,50 @@ function setChartMode(mode) {
   updateChart();
 }
 
+function applyLanguage(lang) {
+  state.lang = I18n.normalizeLang(lang);
+  try {
+    localStorage.setItem(LANG_STORAGE_KEY, state.lang);
+  } catch (e) {}
+
+  document.documentElement.lang = state.lang;
+  document.title = t('pageTitleIndex');
+
+  const langSel = el('langSelect');
+  if (langSel) langSel.value = state.lang;
+
+  document.querySelectorAll('[data-i18n]').forEach((node) => {
+    const key = node.dataset.i18n;
+    if (node.id === 'analysisText' && state.lastAnalysisMarkdown) return;
+    node.textContent = t(key);
+  });
+
+  document.querySelectorAll('[data-i18n-probes]').forEach((opt) => {
+    opt.textContent = t('probesUnit', { n: opt.dataset.i18nProbes });
+  });
+
+  document.querySelectorAll('[data-i18n-fixed-mb]').forEach((opt) => {
+    opt.textContent = t('modeFixed', { mb: opt.dataset.i18nFixedMb });
+  });
+
+  renderServerOptionsText();
+  renderServerSpecs();
+  setGauge(state.gaugeValue, state.gaugeUnitKey, state.gaugeStateKey, state.gaugeColorMode);
+  setStatus(state.statusKey, state.statusVars, state.statusRawError);
+  renderMetricDetails();
+  renderLocalDiagnostics();
+  renderAnalysisMeta();
+  updateChart();
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   initChart();
+  applyLanguage(state.lang);
   loadServers();
   setPhase('idle');
-  setGauge(0, 'Mb/s', 'Gotowy', 'download');
+  setGauge(0, 'unitMbps', 'phaseIdle', 'download');
 
+  el('langSelect')?.addEventListener('change', (e) => applyLanguage(e.target.value));
   el('serverSelect')?.addEventListener('change', renderServerSpecs);
   el('startBtn').addEventListener('click', runTest);
   el('stopBtn').addEventListener('click', stopTest);

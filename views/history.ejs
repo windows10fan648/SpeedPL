@@ -16,52 +16,57 @@
     <div class="topbar-inner">
       <a href="/" class="brand-wordmark">SpeedPL</a>
       <nav class="topbar-nav" aria-label="Nawigacja główna">
-        <a href="/" class="nav-link">Pomiar</a>
-        <a href="/history" class="nav-link active">Historia</a>
+        <a href="/" class="nav-link" data-i18n="navMeasure">Pomiar</a>
+        <a href="/history" class="nav-link active" data-i18n="navHistory">Historia</a>
       </nav>
       <div class="topbar-actions">
-        <a href="/" class="btn primary btn-sm">Nowy test</a>
+        <select id="langSelect" class="lang-select" aria-label="Język / Language / Langue">
+          <option value="pl">Polski</option>
+          <option value="en">English</option>
+          <option value="fr">Français</option>
+        </select>
+        <a href="/" class="btn primary btn-sm" data-i18n="newTest">Nowy test</a>
       </div>
     </div>
   </header>
 
   <main class="container">
     <section class="page-intro">
-      <h1>Historia pomiarów</h1>
+      <h1 data-i18n="historyTitle">Historia pomiarów</h1>
       <p class="meta-line" id="historySourceMeta">
-        <span>Ładowanie źródła danych...</span>
+        <span data-i18n="historyLoading">Ładowanie...</span>
       </p>
     </section>
 
     <section class="metric-grid history-kpi-grid" aria-label="Podsumowanie historii">
       <div class="metric">
-        <span class="metric-label">Liczba testów</span>
+        <span class="metric-label" data-i18n="historyCount">Liczba testów</span>
         <div class="metric-main">
           <strong class="mono" id="kpiCount">0</strong>
         </div>
-        <small class="metric-detail">Zapisane sesje</small>
+        <small class="metric-detail" data-i18n="historySessions">Zapisane sesje</small>
       </div>
       <div class="metric">
-        <span class="metric-label">Średnie pobieranie</span>
+        <span class="metric-label" data-i18n="historyAvgDl">Średnie pobieranie</span>
         <div class="metric-main">
           <strong class="mono" id="kpiAvgDownload">--</strong>
-          <span class="metric-unit">Mb/s</span>
+          <span class="metric-unit" data-i18n="unitMbps">Mb/s</span>
         </div>
         <small class="metric-detail mono" id="kpiMaxDownload">Maks: --</small>
       </div>
       <div class="metric">
-        <span class="metric-label">Średnie wysyłanie</span>
+        <span class="metric-label" data-i18n="historyAvgUl">Średnie wysyłanie</span>
         <div class="metric-main">
           <strong class="mono" id="kpiAvgUpload">--</strong>
-          <span class="metric-unit">Mb/s</span>
+          <span class="metric-unit" data-i18n="unitMbps">Mb/s</span>
         </div>
         <small class="metric-detail mono" id="kpiMaxUpload">Maks: --</small>
       </div>
       <div class="metric">
-        <span class="metric-label">Najniższy ping</span>
+        <span class="metric-label" data-i18n="historyMinPing">Najniższy ping</span>
         <div class="metric-main">
           <strong class="mono" id="kpiMinPing">--</strong>
-          <span class="metric-unit">ms</span>
+          <span class="metric-unit" data-i18n="unitMs">ms</span>
         </div>
         <small class="metric-detail mono" id="kpiAvgPing">Średnio: --</small>
       </div>
@@ -70,8 +75,8 @@
     <section class="panel" id="trendPanel" hidden>
       <div class="panel-header-inline">
         <div>
-          <h2>Trend prędkości</h2>
-          <p class="meta-line">Ostatnie pomiary w kolejności chronologicznej</p>
+          <h2 data-i18n="historyTrendTitle">Trend prędkości</h2>
+          <p class="meta-line" data-i18n="historyTrendSubtitle">Ostatnie pomiary w kolejności chronologicznej</p>
         </div>
       </div>
       <div class="chart-stage chart-stage-sm">
@@ -82,26 +87,26 @@
     <section class="panel">
       <div class="history-toolbar">
         <div class="toolbar-search">
-          <label for="historySearch" class="sr-only">Filtruj historię</label>
-          <input type="search" id="historySearch" class="text-input" placeholder="Filtruj po serwerze lub klasie..." autocomplete="off">
+          <label for="historySearch" class="sr-only" data-i18n="historySearchLabel">Filtruj historię</label>
+          <input type="search" id="historySearch" class="text-input" placeholder="Filtruj po serwerze lub klasie..." data-i18n-placeholder="historySearchPlaceholder" autocomplete="off">
         </div>
         <div class="toolbar-actions">
-          <button id="exportCsvBtn" class="btn secondary btn-sm" type="button" disabled>Eksportuj CSV</button>
-          <button id="exportJsonBtn" class="btn secondary btn-sm" type="button" disabled>Eksportuj JSON</button>
-          <button id="refreshHistoryBtn" class="btn secondary btn-sm" type="button">Odśwież</button>
-          <button id="clearHistoryBtn" class="btn danger-ghost btn-sm" type="button" disabled>Wyczyść historię</button>
+          <button id="exportCsvBtn" class="btn secondary btn-sm" type="button" disabled data-i18n="historyExportCsv">Eksportuj CSV</button>
+          <button id="exportJsonBtn" class="btn secondary btn-sm" type="button" disabled data-i18n="historyExportJson">Eksportuj JSON</button>
+          <button id="refreshHistoryBtn" class="btn secondary btn-sm" type="button" data-i18n="historyRefresh">Odśwież</button>
+          <button id="clearHistoryBtn" class="btn danger-ghost btn-sm" type="button" disabled data-i18n="historyClear">Wyczyść historię</button>
         </div>
       </div>
 
       <div id="clearConfirmBar" class="confirm-bar" hidden>
-        <span>Czy na pewno usunąć zapisane pomiary lokalne<%= dbConfigured ? ' oraz z bazy danych' : '' %>?</span>
+        <span id="clearConfirmText" data-i18n="<%= dbConfigured ? 'historyConfirmBoth' : 'historyConfirmLocal' %>">Czy na pewno usunąć zapisane pomiary lokalne<%= dbConfigured ? ' oraz z bazy danych' : '' %>?</span>
         <div class="confirm-actions">
-          <button id="confirmClearBtn" class="btn danger btn-sm" type="button">Usuń wszystko</button>
-          <button id="cancelClearBtn" class="btn secondary btn-sm" type="button">Anuluj</button>
+          <button id="confirmClearBtn" class="btn danger btn-sm" type="button" data-i18n="historyConfirmBtn">Usuń wszystko</button>
+          <button id="cancelClearBtn" class="btn secondary btn-sm" type="button" data-i18n="historyCancelBtn">Anuluj</button>
         </div>
       </div>
 
-      <div id="historyBox" class="history-table-wrap" aria-live="polite">Ładowanie...</div>
+      <div id="historyBox" class="history-table-wrap" aria-live="polite" data-i18n="historyLoading">Ładowanie...</div>
     </section>
   </main>
 
@@ -109,11 +114,12 @@
     <div class="footer-inner">
       <span>SpeedPL</span>
       <span aria-hidden="true">·</span>
-      <a href="/">Wróć do testu prędkości</a>
+      <a href="/" data-i18n="footerBackToTest">Wróć do testu prędkości</a>
     </div>
   </footer>
 
   <script src="/vendor/chart.js/chart.umd.js"></script>
+  <script src="/vendor/i18n.js"></script>
   <script src="/vendor/diagnostics.js"></script>
   <script src="/js/history.js"></script>
 </body>

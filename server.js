@@ -257,6 +257,9 @@ app.use('/vendor/chart.js', express.static(path.join(__dirname, 'node_modules', 
 app.get('/vendor/diagnostics.js', (req, res) => {
   res.sendFile(path.join(__dirname, 'lib', 'diagnostics.js'));
 });
+app.get('/vendor/i18n.js', (req, res) => {
+  res.sendFile(path.join(__dirname, 'lib', 'i18n.js'));
+});
 
 // Permissive CORS for speed endpoints so configured remote nodes can be tested.
 app.use('/api', (req, res, next) => {

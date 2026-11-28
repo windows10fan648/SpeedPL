@@ -6,8 +6,8 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "build": "node --check server.js && node --check lib/groq.js && node --check lib/diagnostics.js",
-    "lint": "node --check server.js && node --check lib/groq.js && node --check lib/diagnostics.js && node --check public/js/speedtest.js && node --check public/js/history.js",
+    "build": "node --check server.js && node --check lib/groq.js && node --check lib/diagnostics.js && node --check lib/i18n.js",
+    "lint": "node --check server.js && node --check lib/groq.js && node --check lib/diagnostics.js && node --check lib/i18n.js && node --check public/js/speedtest.js && node --check public/js/history.js",
     "test": "node --test"
   },
   "keywords": [

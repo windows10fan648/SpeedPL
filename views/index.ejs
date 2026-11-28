@@ -16,26 +16,31 @@
     <div class="topbar-inner">
       <a href="/" class="brand-wordmark">SpeedPL</a>
       <nav class="topbar-nav" aria-label="Nawigacja główna">
-        <a href="#pomiar" class="nav-link active">Pomiar</a>
-        <a href="#wykres" class="nav-link">Wykres</a>
-        <a href="#diagnostyka" class="nav-link">Diagnostyka</a>
-        <a href="/history" class="nav-link">Historia</a>
+        <a href="#pomiar" class="nav-link active" data-i18n="navMeasure">Pomiar</a>
+        <a href="#wykres" class="nav-link" data-i18n="navChart">Wykres</a>
+        <a href="#diagnostyka" class="nav-link" data-i18n="navDiagnostics">Diagnostyka</a>
+        <a href="/history" class="nav-link" data-i18n="navHistory">Historia</a>
       </nav>
       <div class="topbar-actions">
-        <a href="/history" class="btn secondary btn-sm">Zobacz historię</a>
+        <select id="langSelect" class="lang-select" aria-label="Język / Language / Langue">
+          <option value="pl">Polski</option>
+          <option value="en">English</option>
+          <option value="fr">Français</option>
+        </select>
+        <a href="/history" class="btn secondary btn-sm" data-i18n="viewHistory">Zobacz historię</a>
       </div>
     </div>
   </header>
 
   <main class="container" id="pomiar">
     <section class="page-intro">
-      <h1>Uczciwy pomiar jakości łącza</h1>
+      <h1 data-i18n="heroTitle">Uczciwy pomiar jakości łącza</h1>
       <p class="meta-line">
-        <span>Wielostrumieniowy transfer HTTP</span>
+        <span data-i18n="heroMeta1">Wielostrumieniowy transfer HTTP</span>
         <span aria-hidden="true">·</span>
-        <span>Rzeczywisty RTT i bufferbloat</span>
+        <span data-i18n="heroMeta2">Rzeczywisty RTT i bufferbloat</span>
         <span aria-hidden="true">·</span>
-        <span>Bez sztucznego wygładzania wyników</span>
+        <span data-i18n="heroMeta3">Bez sztucznego wygładzania wyników</span>
       </p>
     </section>
 
@@ -43,15 +48,15 @@
       <!-- Left: Focal Speedometer & Primary Control -->
       <div class="panel gauge-panel">
         <div class="phase-stepper" id="phaseStepper" aria-label="Etap testu">
-          <span class="phase-step active" data-phase="idle">Gotowy</span>
+          <span class="phase-step active" data-phase="idle" data-i18n="phaseIdle">Gotowy</span>
           <span class="phase-sep" aria-hidden="true">/</span>
-          <span class="phase-step" data-phase="ping">Ping</span>
+          <span class="phase-step" data-phase="ping" data-i18n="phasePing">Ping</span>
           <span class="phase-sep" aria-hidden="true">/</span>
-          <span class="phase-step" data-phase="download">Pobieranie</span>
+          <span class="phase-step" data-phase="download" data-i18n="phaseDownload">Pobieranie</span>
           <span class="phase-sep" aria-hidden="true">/</span>
-          <span class="phase-step" data-phase="upload">Wysyłanie</span>
+          <span class="phase-step" data-phase="upload" data-i18n="phaseUpload">Wysyłanie</span>
           <span class="phase-sep" aria-hidden="true">/</span>
-          <span class="phase-step" data-phase="done">Wynik</span>
+          <span class="phase-step" data-phase="done" data-i18n="phaseDone">Wynik</span>
         </div>
 
         <div class="gauge-wrap" data-testid="speed-gauge">
@@ -96,9 +101,9 @@
             </g>
           </svg>
           <div class="gauge-readout">
-            <div class="gauge-phase-label" id="gaugePhaseLabel">Gotowy</div>
+            <div class="gauge-phase-label" id="gaugePhaseLabel" data-i18n="phaseIdle">Gotowy</div>
             <div class="gauge-value mono" id="gaugeValue">0.00</div>
-            <div class="gauge-unit" id="gaugeUnit">Mb/s</div>
+            <div class="gauge-unit" id="gaugeUnit" data-i18n="unitMbps">Mb/s</div>
           </div>
         </div>
 
@@ -107,34 +112,34 @@
             <div class="progress-bar" id="progressBar"></div>
           </div>
           <div class="status-row">
-            <span class="status-text" id="statusText" role="status" aria-live="polite">Gotowy do pomiaru.</span>
+            <span class="status-text" id="statusText" role="status" aria-live="polite" data-i18n="statusReady">Gotowy do pomiaru.</span>
             <span class="elapsed-text mono" id="elapsedText">0.0 s</span>
           </div>
         </div>
 
         <div class="actions">
-          <button id="startBtn" class="btn primary btn-lg" type="button">Rozpocznij test</button>
-          <button id="stopBtn" class="btn secondary btn-lg" type="button" disabled>Zatrzymaj</button>
-          <button id="copySummaryBtn" class="btn secondary btn-lg" type="button" disabled>Kopiuj wynik</button>
+          <button id="startBtn" class="btn primary btn-lg" type="button" data-i18n="btnStart">Rozpocznij test</button>
+          <button id="stopBtn" class="btn secondary btn-lg" type="button" disabled data-i18n="btnStop">Zatrzymaj</button>
+          <button id="copySummaryBtn" class="btn secondary btn-lg" type="button" disabled data-i18n="btnCopyResult">Kopiuj wynik</button>
         </div>
       </div>
 
       <!-- Right: Configuration & Server Selection -->
       <div class="panel config-panel">
         <div class="panel-header-inline">
-          <h2>Konfiguracja pomiaru</h2>
+          <h2 data-i18n="configTitle">Konfiguracja pomiaru</h2>
           <div class="segmented" role="tablist" aria-label="Tryb testu" id="testPresetGroup">
-            <button type="button" class="seg-btn active" role="tab" aria-selected="true" data-preset="full">Pełny test</button>
-            <button type="button" class="seg-btn" role="tab" aria-selected="false" data-preset="quick">Szybki</button>
-            <button type="button" class="seg-btn" role="tab" aria-selected="false" data-preset="latency">Tylko ping</button>
+            <button type="button" class="seg-btn active" role="tab" aria-selected="true" data-preset="full" data-i18n="presetFull">Pełny test</button>
+            <button type="button" class="seg-btn" role="tab" aria-selected="false" data-preset="quick" data-i18n="presetQuick">Szybki</button>
+            <button type="button" class="seg-btn" role="tab" aria-selected="false" data-preset="latency" data-i18n="presetLatency">Tylko ping</button>
           </div>
         </div>
 
         <div class="controls-grid">
           <div class="field field-full">
             <div class="field-label-row">
-              <label for="serverSelect">Serwer testowy</label>
-              <button type="button" id="probeServersBtn" class="link-btn">Sprawdź ping serwerów</button>
+              <label for="serverSelect" data-i18n="serverLabel">Serwer testowy</label>
+              <button type="button" id="probeServersBtn" class="link-btn" data-i18n="probeServers">Sprawdź ping serwerów</button>
             </div>
             <select id="serverSelect">
               <% servers.forEach(function (s) { %>
@@ -164,46 +169,46 @@
           </div>
 
           <div class="field">
-            <label for="streamsSelect">Równoległe strumienie</label>
+            <label for="streamsSelect" data-i18n="streamsLabel">Równoległe strumienie</label>
             <select id="streamsSelect">
-              <option value="1">1 strumień</option>
-              <option value="2">2 strumienie</option>
-              <option value="4" selected>4 strumienie</option>
-              <option value="6">6 strumieni</option>
-              <option value="8">8 strumieni</option>
+              <option value="1" data-i18n="stream1">1 strumień</option>
+              <option value="2" data-i18n="stream2">2 strumienie</option>
+              <option value="4" selected data-i18n="stream4">4 strumienie</option>
+              <option value="6" data-i18n="stream6">6 strumieni</option>
+              <option value="8" data-i18n="stream8">8 strumieni</option>
             </select>
           </div>
 
           <div class="field">
-            <label for="pingCountSelect">Liczba prób pingu</label>
+            <label for="pingCountSelect" data-i18n="pingCountLabel">Liczba prób pingu</label>
             <select id="pingCountSelect">
-              <option value="12">12 prób</option>
-              <option value="20" selected>20 prób</option>
-              <option value="40">40 prób</option>
+              <option value="12" data-i18n-probes="12">12 prób</option>
+              <option value="20" selected data-i18n-probes="20">20 prób</option>
+              <option value="40" data-i18n-probes="40">40 prób</option>
             </select>
           </div>
 
           <div class="field">
-            <label for="sizeSelect">Pomiar pobierania</label>
+            <label for="sizeSelect" data-i18n="dlModeLabel">Pomiar pobierania</label>
             <select id="sizeSelect">
-              <option value="auto:8000" selected>Automatyczny (8 s)</option>
-              <option value="auto:4000">Szybki (4 s)</option>
-              <option value="8388608">Stały: 8 MB</option>
-              <option value="16777216">Stały: 16 MB</option>
-              <option value="33554432">Stały: 32 MB</option>
-              <option value="67108864">Stały: 64 MB</option>
+              <option value="auto:8000" selected data-i18n="modeAuto8">Automatyczny (8 s)</option>
+              <option value="auto:4000" data-i18n="modeAuto4">Szybki (4 s)</option>
+              <option value="8388608" data-i18n-fixed-mb="8">Stały: 8 MB</option>
+              <option value="16777216" data-i18n-fixed-mb="16">Stały: 16 MB</option>
+              <option value="33554432" data-i18n-fixed-mb="32">Stały: 32 MB</option>
+              <option value="67108864" data-i18n-fixed-mb="64">Stały: 64 MB</option>
             </select>
           </div>
 
           <div class="field">
-            <label for="uploadSizeSelect">Pomiar wysyłania</label>
+            <label for="uploadSizeSelect" data-i18n="ulModeLabel">Pomiar wysyłania</label>
             <select id="uploadSizeSelect">
-              <option value="auto:8000" selected>Automatyczny (8 s)</option>
-              <option value="auto:4000">Szybki (4 s)</option>
-              <option value="4194304">Stały: 4 MB</option>
-              <option value="8388608">Stały: 8 MB</option>
-              <option value="16777216">Stały: 16 MB</option>
-              <option value="32768000">Stały: 32 MB</option>
+              <option value="auto:8000" selected data-i18n="modeAuto8">Automatyczny (8 s)</option>
+              <option value="auto:4000" data-i18n="modeAuto4">Szybki (4 s)</option>
+              <option value="4194304" data-i18n-fixed-mb="4">Stały: 4 MB</option>
+              <option value="8388608" data-i18n-fixed-mb="8">Stały: 8 MB</option>
+              <option value="16777216" data-i18n-fixed-mb="16">Stały: 16 MB</option>
+              <option value="32768000" data-i18n-fixed-mb="32">Stały: 32 MB</option>
             </select>
           </div>
         </div>
@@ -213,11 +218,11 @@
         <div class="toggles">
           <label class="checkbox">
             <input type="checkbox" id="saveHistory" checked>
-            <span>Zapisuj wyniki w historii (lokalnie<%= dbConfigured ? ' i w bazie danych' : '' %>)</span>
+            <span id="saveHistoryLabel" data-i18n="<%= dbConfigured ? 'optSaveBoth' : 'optSaveLocal' %>">Zapisuj wyniki w historii (lokalnie<%= dbConfigured ? ' i w bazie danych' : '' %>)</span>
           </label>
           <label class="checkbox">
             <input type="checkbox" id="autoAnalyze" <%= groqConfigured ? '' : 'disabled' %>>
-            <span>Automatycznie analizuj wynik przez Groq AI<%= groqConfigured ? '' : ' (wymaga GROQ_API_KEY)' %></span>
+            <span id="autoAnalyzeLabel" data-i18n="<%= groqConfigured ? 'optAutoAnalyze' : 'optAutoAnalyzeDisabled' %>">Automatycznie analizuj wynik przez Groq AI<%= groqConfigured ? '' : ' (wymaga GROQ_API_KEY)' %></span>
           </label>
         </div>
       </div>
@@ -226,44 +231,44 @@
     <!-- 5-Metric Telemetry Strip -->
     <section class="metric-grid" aria-label="Wyniki pomiaru">
       <div class="metric">
-        <span class="metric-label">Pobieranie</span>
+        <span class="metric-label" data-i18n="kpiDownload">Pobieranie</span>
         <div class="metric-main">
           <strong class="mono" id="downloadValue">--</strong>
-          <span class="metric-unit">Mb/s</span>
+          <span class="metric-unit" data-i18n="unitMbps">Mb/s</span>
         </div>
-        <small class="metric-detail mono" id="downloadDetail">Oczekuje na test</small>
+        <small class="metric-detail mono" id="downloadDetail" data-i18n="detailWaiting">Oczekuje na test</small>
       </div>
       <div class="metric">
-        <span class="metric-label">Wysyłanie</span>
+        <span class="metric-label" data-i18n="kpiUpload">Wysyłanie</span>
         <div class="metric-main">
           <strong class="mono" id="uploadValue">--</strong>
-          <span class="metric-unit">Mb/s</span>
+          <span class="metric-unit" data-i18n="unitMbps">Mb/s</span>
         </div>
-        <small class="metric-detail mono" id="uploadDetail">Oczekuje na test</small>
+        <small class="metric-detail mono" id="uploadDetail" data-i18n="detailWaiting">Oczekuje na test</small>
       </div>
       <div class="metric">
-        <span class="metric-label">Ping (mediana)</span>
+        <span class="metric-label" data-i18n="kpiPing">Ping (mediana)</span>
         <div class="metric-main">
           <strong class="mono" id="pingValue">--</strong>
-          <span class="metric-unit">ms</span>
+          <span class="metric-unit" data-i18n="unitMs">ms</span>
         </div>
-        <small class="metric-detail mono" id="pingDetail">min · P95 · max</small>
+        <small class="metric-detail mono" id="pingDetail" data-i18n="detailPingIdle">min · P95 · max</small>
       </div>
       <div class="metric">
-        <span class="metric-label">Jitter</span>
+        <span class="metric-label" data-i18n="kpiJitter">Jitter</span>
         <div class="metric-main">
           <strong class="mono" id="jitterValue">--</strong>
-          <span class="metric-unit">ms</span>
+          <span class="metric-unit" data-i18n="unitMs">ms</span>
         </div>
-        <small class="metric-detail mono" id="jitterDetail">Zmienność RTT</small>
+        <small class="metric-detail mono" id="jitterDetail" data-i18n="detailJitterIdle">Zmienność RTT</small>
       </div>
       <div class="metric">
-        <span class="metric-label">Pod obciążeniem</span>
+        <span class="metric-label" data-i18n="kpiLoaded">Pod obciążeniem</span>
         <div class="metric-main">
           <strong class="mono" id="loadedValue">--</strong>
-          <span class="metric-unit">ms</span>
+          <span class="metric-unit" data-i18n="unitMs">ms</span>
         </div>
-        <small class="metric-detail mono" id="loadedDetail">Wzrost · Pob. · Wys.</small>
+        <small class="metric-detail mono" id="loadedDetail" data-i18n="detailLoadedIdle">Wzrost · Pob. · Wys.</small>
       </div>
     </section>
 
@@ -271,12 +276,12 @@
     <section class="panel" id="wykres">
       <div class="panel-header-inline">
         <div>
-          <h2>Telemetria w czasie rzeczywistym</h2>
-          <p class="meta-line">Próbkowanie co 200 ms oraz rozkład opóźnień RTT</p>
+          <h2 data-i18n="chartTitle">Telemetria w czasie rzeczywistym</h2>
+          <p class="meta-line" data-i18n="chartSubtitle">Próbkowanie co 200 ms oraz rozkład opóźnień RTT</p>
         </div>
         <div class="segmented" role="tablist" aria-label="Widok wykresu" id="chartModeGroup">
-          <button type="button" class="seg-btn active" role="tab" aria-selected="true" data-chart="throughput">Przepustowość (Mb/s)</button>
-          <button type="button" class="seg-btn" role="tab" aria-selected="false" data-chart="ping">Rozkład pingu (ms)</button>
+          <button type="button" class="seg-btn active" role="tab" aria-selected="true" data-chart="throughput" data-i18n="chartThroughput">Przepustowość (Mb/s)</button>
+          <button type="button" class="seg-btn" role="tab" aria-selected="false" data-chart="ping" data-i18n="chartPing">Rozkład pingu (ms)</button>
         </div>
       </div>
       <div class="chart-stage">
@@ -289,42 +294,42 @@
       <div class="panel">
         <div class="panel-header-inline">
           <div>
-            <h2>Diagnostyka łącza i Bufferbloat</h2>
-            <p class="meta-line">Ocena lokalna na podstawie realnych progów</p>
+            <h2 data-i18n="diagTitle">Diagnostyka łącza i Bufferbloat</h2>
+            <p class="meta-line" data-i18n="diagSubtitle">Ocena lokalna na podstawie realnych progów</p>
           </div>
           <div class="grade-readout mono" id="bufferbloatGradeBadge">Klasa: --</div>
         </div>
 
-        <div id="bufferbloatSummary" class="bloat-summary">
+        <div id="bufferbloatSummary" class="bloat-summary" data-i18n="bloatPrompt">
           Uruchom test, aby obliczyć klasę stabilności kolejki (Bufferbloat A+–F) oraz gotowość do gier, 4K i pracy zdalnej.
         </div>
 
         <div id="useCaseMatrix" class="use-case-list" aria-live="polite">
-          <div class="use-case-empty">Brak wyników pomiaru do oceny.</div>
+          <div class="use-case-empty" data-i18n="useCaseEmpty">Brak wyników pomiaru do oceny.</div>
         </div>
       </div>
 
       <div class="panel" id="analiza">
         <div class="panel-header-inline wrap">
           <div>
-            <h2>Analiza AI (Groq)</h2>
-            <p class="meta-line" id="groqAvailabilityNote">
+            <h2 data-i18n="aiTitle">Analiza AI (Groq)</h2>
+            <p class="meta-line" id="groqAvailabilityNote" data-i18n="<%= groqConfigured ? 'aiReadyNote' : 'aiNoKeyNote' %>">
               <%= groqConfigured ? 'Model gotowy po zakończeniu pomiaru' : 'GROQ_API_KEY nie jest skonfigurowany na serwerze' %>
             </p>
           </div>
           <div class="ai-controls">
             <select id="useCaseSelect" aria-label="Tryb analizy AI">
-              <option value="general" selected>Ogólna ocena</option>
-              <option value="gaming">Gry online</option>
-              <option value="streaming">Streaming 4K</option>
-              <option value="remote_work">Praca zdalna</option>
+              <option value="general" selected data-i18n="aiUseGeneral">Ogólna ocena</option>
+              <option value="gaming" data-i18n="aiUseGaming">Gry online</option>
+              <option value="streaming" data-i18n="aiUseStreaming">Streaming 4K</option>
+              <option value="remote_work" data-i18n="aiUseRemote">Praca zdalna</option>
             </select>
-            <button id="analyzeBtn" class="btn secondary" type="button" disabled>Analizuj przez AI</button>
-            <button id="copyAnalysisBtn" class="btn secondary" type="button" disabled>Kopiuj</button>
+            <button id="analyzeBtn" class="btn secondary" type="button" disabled data-i18n="aiAnalyzeBtn">Analizuj przez AI</button>
+            <button id="copyAnalysisBtn" class="btn secondary" type="button" disabled data-i18n="aiCopyBtn">Kopiuj</button>
           </div>
         </div>
         <div id="analysisMeta" class="analysis-meta mono"></div>
-        <div id="analysisText" class="analysis">
+        <div id="analysisText" class="analysis" data-i18n="<%= groqConfigured ? 'aiPlaceholderReady' : 'aiPlaceholderNoKey' %>">
           <%= groqConfigured ? 'Po zakończeniu testu kliknij „Analizuj przez AI”, aby uzyskać spersonalizowane rekomendacje.' : 'Aby włączyć komentarz Groq AI, ustaw zmienną środowiskową GROQ_API_KEY. Lokalna diagnostyka po lewej działa zawsze bez klucza.' %>
         </div>
       </div>
@@ -335,13 +340,14 @@
     <div class="footer-inner">
       <span>SpeedPL</span>
       <span aria-hidden="true">·</span>
-      <span>Losowy strumień bajtów po stronie serwera</span>
+      <span data-i18n="footerStreamNote">Losowy strumień bajtów po stronie serwera</span>
       <span aria-hidden="true">·</span>
-      <a href="/history">Historia i eksport CSV</a>
+      <a href="/history" data-i18n="footerHistoryLink">Historia i eksport CSV</a>
     </div>
   </footer>
 
   <script src="/vendor/chart.js/chart.umd.js"></script>
+  <script src="/vendor/i18n.js"></script>
   <script src="/vendor/diagnostics.js"></script>
   <script src="/js/speedtest.js"></script>
 </body>
