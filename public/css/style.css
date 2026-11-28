@@ -395,6 +395,16 @@ label {
   min-height: 16px;
 }
 
+.server-specs {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.45;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-top: 2px;
+}
+
 select,
 button,
 input {
@@ -632,10 +642,8 @@ select:hover,
 .metric-detail {
   color: var(--muted);
   font-size: 12px;
-  min-height: 16px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.45;
+  min-height: 18px;
 }
 
 /* Chart stage */

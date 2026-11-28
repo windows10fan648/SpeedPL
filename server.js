@@ -1,5 +1,6 @@
 const crypto = require('node:crypto');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 
 // Minimal .env loader (no extra dependency).
@@ -186,17 +187,60 @@ try {
   console.error('Invalid SPEEDPL_SERVERS JSON:', err.message);
 }
 
+const DEFAULT_SERVER_LOCATION = process.env.SERVER_LOCATION || process.env.RENDER_REGION || '';
+const DEFAULT_SERVER_PROVIDER = process.env.SERVER_PROVIDER || (process.env.RENDER ? 'Render' : '');
+const DEFAULT_SERVER_NAME = process.env.SERVER_NAME || (DEFAULT_SERVER_LOCATION ? `Węzeł (${DEFAULT_SERVER_LOCATION})` : 'Węzeł główny');
+
+function buildServerInfo(req) {
+  const host = process.env.PUBLIC_HOST || (req && typeof req.get === 'function' ? req.get('host') : '') || 'localhost';
+  const protocol = req && req.protocol ? String(req.protocol).toUpperCase() : 'HTTP';
+  const cpuCount = os.cpus().length || 1;
+  return {
+    name: DEFAULT_SERVER_NAME,
+    host,
+    protocol,
+    location: DEFAULT_SERVER_LOCATION || null,
+    provider: DEFAULT_SERVER_PROVIDER || null,
+    cpuCount,
+    nodeVersion: process.version,
+    randomPoolMb: 4
+  };
+}
+
 const servers = [
-  { id: 'current', name: process.env.SERVER_NAME || 'Serwer bieżący', url: null, configured: true }
+  {
+    id: 'current',
+    name: DEFAULT_SERVER_NAME,
+    location: DEFAULT_SERVER_LOCATION || null,
+    provider: DEFAULT_SERVER_PROVIDER || null,
+    specs: `${os.cpus().length || 1} vCPU · 4 MB CSPRNG`,
+    url: null,
+    configured: true
+  }
 ];
 for (const city of DEFAULT_CITIES) {
   const override = configuredServers.find((s) => s && s.id === city.id);
-  servers.push(override ? { ...city, ...override, configured: !!override.url } : city);
+  servers.push(override
+    ? {
+        ...city,
+        ...override,
+        location: override.location || city.name,
+        specs: override.specs || null,
+        configured: !!override.url
+      }
+    : city);
 }
 // Add any extra configured servers not in default list.
 for (const s of configuredServers) {
   if (s && s.id && !servers.some((x) => x.id === s.id)) {
-    servers.push({ id: s.id, name: s.name || s.id, url: s.url || null, configured: !!s.url });
+    servers.push({
+      id: s.id,
+      name: s.name || s.id,
+      location: s.location || null,
+      specs: s.specs || null,
+      url: s.url || null,
+      configured: !!s.url
+    });
   }
 }
 
@@ -241,6 +285,7 @@ function isGroqConfigured() {
 app.get('/', (req, res) => {
   res.render('index', {
     servers,
+    serverInfo: buildServerInfo(req),
     groqConfigured: isGroqConfigured(),
     dbConfigured: dbEnabled()
   });
@@ -256,12 +301,20 @@ app.get('/api/health', (req, res) => {
     db: dbEnabled(),
     dbType: dbEnabled() ? dbType : null,
     groqConfigured: isGroqConfigured(),
-    serverName: servers[0]?.name || 'Serwer bieżący'
+    serverName: servers[0]?.name || 'Węzeł główny'
   });
 });
 
+app.get('/api/server-info', (req, res) => {
+  res.json(buildServerInfo(req));
+});
+
 app.get('/api/servers', (req, res) => {
-  res.json({ servers });
+  const info = buildServerInfo(req);
+  const enriched = servers.map((s, idx) =>
+    idx === 0 ? { ...s, host: info.host, protocol: info.protocol } : s
+  );
+  res.json({ servers: enriched, serverInfo: info });
 });
 
 app.get('/api/ping', pingLimiter, (req, res) => {

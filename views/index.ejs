@@ -96,7 +96,7 @@
             </g>
           </svg>
           <div class="gauge-readout">
-            <div class="gauge-phase-label" id="gaugePhaseLabel">Oczekiwanie</div>
+            <div class="gauge-phase-label" id="gaugePhaseLabel">Gotowy</div>
             <div class="gauge-value mono" id="gaugeValue">0.00</div>
             <div class="gauge-unit" id="gaugeUnit">Mb/s</div>
           </div>
@@ -138,9 +138,28 @@
             </div>
             <select id="serverSelect">
               <% servers.forEach(function (s) { %>
-                <option value="<%= s.id %>" data-url="<%= s.url || '' %>" <%= s.configured ? '' : 'disabled' %>><%= s.name %><%= s.configured ? '' : ' (wymaga konfiguracji)' %></option>
+                <option
+                  value="<%= s.id %>"
+                  data-url="<%= s.url || '' %>"
+                  data-location="<%= s.location || '' %>"
+                  data-specs="<%= s.specs || '' %>"
+                  <%= s.configured ? '' : 'disabled' %>
+                ><%= s.name %><%= s.configured ? '' : ' (wymaga konfiguracji)' %></option>
               <% }) %>
             </select>
+            <div id="serverSpecsLine" class="server-specs mono">
+              <span>Host: <%= serverInfo.host %></span>
+              <% if (serverInfo.location) { %>
+                <span aria-hidden="true">·</span>
+                <span>Lokalizacja: <%= serverInfo.location %></span>
+              <% } %>
+              <% if (serverInfo.provider) { %>
+                <span aria-hidden="true">·</span>
+                <span><%= serverInfo.provider %></span>
+              <% } %>
+              <span aria-hidden="true">·</span>
+              <span><%= serverInfo.protocol %> · <%= serverInfo.cpuCount %> vCPU · <%= serverInfo.randomPoolMb %> MB CSPRNG</span>
+            </div>
             <div id="serverProbeResult" class="field-hint mono" aria-live="polite"></div>
           </div>
 
@@ -228,7 +247,7 @@
           <strong class="mono" id="pingValue">--</strong>
           <span class="metric-unit">ms</span>
         </div>
-        <small class="metric-detail mono" id="pingDetail">min / P95 / max</small>
+        <small class="metric-detail mono" id="pingDetail">min · P95 · max</small>
       </div>
       <div class="metric">
         <span class="metric-label">Jitter</span>
@@ -244,7 +263,7 @@
           <strong class="mono" id="loadedValue">--</strong>
           <span class="metric-unit">ms</span>
         </div>
-        <small class="metric-detail mono" id="loadedDetail">Bufferbloat / DL / UL</small>
+        <small class="metric-detail mono" id="loadedDetail">Wzrost · Pob. · Wys.</small>
       </div>
     </section>
 

@@ -72,7 +72,7 @@ function mbpsToGaugeRatio(mbps) {
   return 1;
 }
 
-function setGauge(value, unit = 'Mb/s', phaseLabel = 'Oczekiwanie', mode = 'download') {
+function setGauge(value, unit = 'Mb/s', phaseLabel = 'Gotowy', mode = 'download') {
   const arc = el('gaugeArc');
   const valNode = el('gaugeValue');
   const unitNode = el('gaugeUnit');
@@ -114,7 +114,7 @@ function serverBase() {
 function selectedServerName() {
   const select = el('serverSelect');
   const option = select.options[select.selectedIndex];
-  const raw = option ? option.textContent : 'Serwer bieżący';
+  const raw = option ? option.textContent : 'Węzeł główny';
   return raw.replace(/\s*\(\d+(?:\.\d+)?\s*ms\)$/, '');
 }
 
@@ -169,11 +169,40 @@ async function copyToClipboard(text) {
   }
 }
 
+let cachedServerInfo = null;
+
+function renderServerSpecs() {
+  const specsEl = el('serverSpecsLine');
+  const select = el('serverSelect');
+  if (!specsEl || !select) return;
+  const opt = select.options[select.selectedIndex];
+  if (!opt) return;
+
+  const parts = [];
+  const host = opt.dataset.host || (opt.value === 'current' ? cachedServerInfo?.host : '');
+  const location = opt.dataset.location || (opt.value === 'current' ? cachedServerInfo?.location : '');
+  const provider = opt.dataset.provider || (opt.value === 'current' ? cachedServerInfo?.provider : '');
+  const specs = opt.dataset.specs || (opt.value === 'current' && cachedServerInfo ? `${cachedServerInfo.protocol} · ${cachedServerInfo.cpuCount} vCPU · ${cachedServerInfo.randomPoolMb} MB CSPRNG` : '');
+
+  if (host) parts.push(`Host: ${host}`);
+  else if (opt.dataset.url) {
+    try { parts.push(`Host: ${new URL(opt.dataset.url).host}`); } catch (e) {}
+  }
+  if (location) parts.push(`Lokalizacja: ${location}`);
+  if (provider) parts.push(provider);
+  if (specs) parts.push(specs);
+
+  specsEl.innerHTML = parts
+    .map((p, idx) => (idx > 0 ? `<span aria-hidden="true">·</span><span>${escapeHtml(p)}</span>` : `<span>${escapeHtml(p)}</span>`))
+    .join('');
+}
+
 async function loadServers() {
   try {
     const res = await fetch('/api/servers');
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
+    if (data.serverInfo) cachedServerInfo = data.serverInfo;
     const select = el('serverSelect');
     const prevValue = select.value;
     select.innerHTML = '';
@@ -184,6 +213,10 @@ async function loadServers() {
       opt.dataset.baseName = s.name;
       opt.disabled = !s.configured;
       opt.dataset.url = s.url || '';
+      opt.dataset.host = s.host || '';
+      opt.dataset.location = s.location || '';
+      opt.dataset.provider = s.provider || '';
+      opt.dataset.specs = s.specs || '';
       select.appendChild(opt);
     }
     if (prevValue && Array.from(select.options).some((o) => o.value === prevValue && !o.disabled)) {
@@ -192,6 +225,7 @@ async function loadServers() {
       const current = data.servers.find((s) => s.id === 'current');
       if (current) select.value = 'current';
     }
+    renderServerSpecs();
   } catch (e) {
     statusText.textContent = 'Nie udało się pobrać listy serwerów.';
   }
@@ -847,9 +881,9 @@ async function runTest() {
   setMetric('loadedValue', null);
   el('downloadDetail').textContent = 'Oczekuje na pomiar';
   el('uploadDetail').textContent = 'Oczekuje na pomiar';
-  el('pingDetail').textContent = 'min / P95 / max';
+  el('pingDetail').textContent = 'min · P95 · max';
   el('jitterDetail').textContent = 'Zmienność RTT';
-  el('loadedDetail').textContent = 'Bufferbloat / DL / UL';
+  el('loadedDetail').textContent = 'Wzrost · Pob. · Wys.';
 
   el('startBtn').disabled = true;
   el('stopBtn').disabled = false;
@@ -872,7 +906,7 @@ async function runTest() {
     setMetric('pingValue', state.ping);
     setMetric('jitterValue', state.jitter);
     if (Number.isFinite(state.pingMin) && Number.isFinite(state.pingMax)) {
-      el('pingDetail').textContent = `min ${fmt(state.pingMin)} / P95 ${fmt(state.pingP95)} / max ${fmt(state.pingMax)}`;
+      el('pingDetail').textContent = `min ${fmt(state.pingMin)} · P95 ${fmt(state.pingP95)} · max ${fmt(state.pingMax)} ms`;
       el('jitterDetail').textContent = `Strata prób: ${state.packetLoss}%`;
     }
     if (state.chartMode === 'ping') updateChart();
@@ -890,6 +924,9 @@ async function runTest() {
       setMetric('downloadValue', state.downloadMbps);
       el('downloadDetail').textContent = `Przesłano ${formatMB(state.downloadBytes)}`;
       setMetric('loadedValue', state.loadedLatency);
+      if (state.loadedDownloadLatency !== null) {
+        el('loadedDetail').textContent = `Pobieranie: ${fmt(state.loadedDownloadLatency)} ms`;
+      }
 
       checkAborted();
       setPhase('upload');
@@ -910,10 +947,10 @@ async function runTest() {
       setMetric('loadedValue', state.loadedLatency);
 
       if (Number.isFinite(state.loadedLatency) && Number.isFinite(state.ping)) {
-        const bloat = Math.max(0, state.loadedLatency - state.ping);
-        const parts = [`+${fmt(bloat)} ms`];
-        if (state.loadedDownloadLatency !== null) parts.push(`DL ${fmt(state.loadedDownloadLatency)}`);
-        if (state.loadedUploadLatency !== null) parts.push(`UL ${fmt(state.loadedUploadLatency)}`);
+        const bloatInfo = D.computeBufferbloatGrade(state.ping, state.loadedLatency);
+        const parts = [`Wzrost +${fmt(bloatInfo.deltaMs)} ms (${bloatInfo.grade})`];
+        if (state.loadedDownloadLatency !== null) parts.push(`Pob: ${fmt(state.loadedDownloadLatency)} ms`);
+        if (state.loadedUploadLatency !== null) parts.push(`Wys: ${fmt(state.loadedUploadLatency)} ms`);
         el('loadedDetail').textContent = parts.join(' · ');
       }
       setGauge(state.downloadMbps, 'Mb/s', 'Pobieranie (wynik)', 'download');
@@ -1215,8 +1252,9 @@ document.addEventListener('DOMContentLoaded', () => {
   initChart();
   loadServers();
   setPhase('idle');
-  setGauge(0, 'Mb/s', 'Oczekiwanie', 'download');
+  setGauge(0, 'Mb/s', 'Gotowy', 'download');
 
+  el('serverSelect')?.addEventListener('change', renderServerSpecs);
   el('startBtn').addEventListener('click', runTest);
   el('stopBtn').addEventListener('click', stopTest);
   el('analyzeBtn').addEventListener('click', analyze);

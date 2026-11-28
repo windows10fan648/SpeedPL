@@ -34,7 +34,10 @@ Aplikacja nasłuchuje na `http://localhost:3000` (lub `process.env.PORT`).
 - `GROQ_API_URL` - domyślnie `https://api.groq.com/openai/v1/chat/completions`.
 - `DATABASE_URL` - opcjonalny PostgreSQL. Dla TiDB/MySQL ustaw `MYSQL_URL` lub `TIDB_DATABASE_URL` (albo `DATABASE_URL=mysql://...`) i zainstaluj opcjonalnie `mysql2` (poza pięcioma wymaganymi zależnościami).
 - `SPEEDPL_SERVERS` - opcjonalna lista węzłów JSON: `[{"id":"warsaw","name":"Warszawa","url":"https://..."}]`.
-- `SERVER_NAME` - nazwa bieżącego serwera.
+- `SERVER_NAME` - nazwa bieżącego węzła (domyślnie `Węzeł główny` lub region Render).
+- `SERVER_LOCATION` - opcjonalna lokalizacja datacenter (np. `Frankfurt, DE` lub `Warszawa, PL`).
+- `SERVER_PROVIDER` - opcjonalna nazwa operatora/chmury (np. `Render`, `OVH`).
+- `PUBLIC_HOST` - opcjonalna domena kanoniczna wyświetlana w specyfikacji węzła.
 
 ## Serwery testowe
 
