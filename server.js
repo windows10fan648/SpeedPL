@@ -82,26 +82,35 @@ if (useDbParts) {
 }
 
 if (pgUrl) {
-  dbType = 'pg';
-  pgPool = new Pool({
-    connectionString: pgUrl,
-    ssl: pgUrl.includes('localhost') ? false : { rejectUnauthorized: false }
-  });
-  pgPool.query(`
-    CREATE TABLE IF NOT EXISTS speed_tests (
-      id SERIAL PRIMARY KEY,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      server_id TEXT NOT NULL,
-      download_mbps DOUBLE PRECISION,
-      upload_mbps DOUBLE PRECISION,
-      ping_ms DOUBLE PRECISION,
-      jitter_ms DOUBLE PRECISION,
-      loaded_latency_ms DOUBLE PRECISION,
-      download_bytes BIGINT,
-      upload_bytes BIGINT
-    )
-  `).then(() => { dbReady = true; })
-    .catch((err) => { console.error('Database init failed:', err.message); });
+  try {
+    dbType = 'pg';
+    pgPool = new Pool({
+      connectionString: pgUrl,
+      ssl: pgUrl.includes('localhost') ? false : { rejectUnauthorized: false }
+    });
+    pgPool.on('error', (err) => {
+      console.error('Database pool error:', err.message);
+    });
+    pgPool.query(`
+      CREATE TABLE IF NOT EXISTS speed_tests (
+        id SERIAL PRIMARY KEY,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        server_id TEXT NOT NULL,
+        download_mbps DOUBLE PRECISION,
+        upload_mbps DOUBLE PRECISION,
+        ping_ms DOUBLE PRECISION,
+        jitter_ms DOUBLE PRECISION,
+        loaded_latency_ms DOUBLE PRECISION,
+        download_bytes BIGINT,
+        upload_bytes BIGINT
+      )
+    `).then(() => { dbReady = true; })
+      .catch((err) => { console.error('Database init failed:', err.message); });
+  } catch (err) {
+    console.error('Database config failed:', err.message);
+    pgPool = null;
+    dbType = null;
+  }
 } else if (mysqlUrl || useDbParts) {
   let mysql;
   try {
@@ -110,40 +119,46 @@ if (pgUrl) {
     console.error('mysql2 is not installed; TiDB/MySQL history disabled:', err.message);
   }
   if (mysql) {
-    dbType = 'mysql';
-    let mysqlPoolOptions;
-    if (useDbParts) {
-      mysqlPoolOptions = {
-        host: process.env.DB_HOST,
-        port: Number(process.env.DB_PORT || 4000),
-        user: process.env.DB_USERNAME,
-        password: process.env.DB_PASSWORD,
-        database: process.env.DB_DATABASE,
-        ssl: { rejectUnauthorized: false },
-        waitForConnections: true,
-        connectionLimit: 10
-      };
-    } else {
-      mysqlPoolOptions = looksLikeTiDB
-        ? { uri: mysqlUrl, ssl: { rejectUnauthorized: false } }
-        : mysqlUrl;
+    try {
+      dbType = 'mysql';
+      let mysqlPoolOptions;
+      if (useDbParts) {
+        mysqlPoolOptions = {
+          host: process.env.DB_HOST,
+          port: Number(process.env.DB_PORT || 4000),
+          user: process.env.DB_USERNAME,
+          password: process.env.DB_PASSWORD,
+          database: process.env.DB_DATABASE,
+          ssl: { rejectUnauthorized: false },
+          waitForConnections: true,
+          connectionLimit: 10
+        };
+      } else {
+        mysqlPoolOptions = looksLikeTiDB
+          ? { uri: mysqlUrl, ssl: { rejectUnauthorized: false } }
+          : mysqlUrl;
+      }
+      mysqlPool = mysql.createPool(mysqlPoolOptions);
+      mysqlPool.query(`
+        CREATE TABLE IF NOT EXISTS speed_tests (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          server_id VARCHAR(64) NOT NULL,
+          download_mbps DOUBLE NULL,
+          upload_mbps DOUBLE NULL,
+          ping_ms DOUBLE NULL,
+          jitter_ms DOUBLE NULL,
+          loaded_latency_ms DOUBLE NULL,
+          download_bytes BIGINT NULL,
+          upload_bytes BIGINT NULL
+        )
+      `).then(() => { dbReady = true; })
+        .catch((err) => { console.error('Database init failed:', err.message); });
+    } catch (err) {
+      console.error('Database config failed:', err.message);
+      mysqlPool = null;
+      dbType = null;
     }
-    mysqlPool = mysql.createPool(mysqlPoolOptions);
-    mysqlPool.query(`
-      CREATE TABLE IF NOT EXISTS speed_tests (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        server_id VARCHAR(64) NOT NULL,
-        download_mbps DOUBLE NULL,
-        upload_mbps DOUBLE NULL,
-        ping_ms DOUBLE NULL,
-        jitter_ms DOUBLE NULL,
-        loaded_latency_ms DOUBLE NULL,
-        download_bytes BIGINT NULL,
-        upload_bytes BIGINT NULL
-      )
-    `).then(() => { dbReady = true; })
-      .catch((err) => { console.error('Database init failed:', err.message); });
   }
 }
 
@@ -195,11 +210,14 @@ function serverBase(serverId) {
 app.use(express.json({ limit: '1mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/vendor/chart.js', express.static(path.join(__dirname, 'node_modules', 'chart.js', 'dist')));
+app.get('/vendor/diagnostics.js', (req, res) => {
+  res.sendFile(path.join(__dirname, 'lib', 'diagnostics.js'));
+});
 
 // Permissive CORS for speed endpoints so configured remote nodes can be tested.
 app.use('/api', (req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(204).end();
   next();
@@ -207,20 +225,39 @@ app.use('/api', (req, res, next) => {
 
 app.set('trust proxy', 1);
 
-const pingLimiter = rateLimit({ windowMs: 60 * 1000, max: 240, message: { error: 'Too many ping requests.' } });
-const downloadLimiter = rateLimit({ windowMs: 60 * 1000, max: 90, message: { error: 'Too many download tests.' } });
-const uploadLimiter = rateLimit({ windowMs: 60 * 1000, max: 60, message: { error: 'Too many upload tests.' } });
-const analyzeLimiter = rateLimit({ windowMs: 60 * 1000, max: 15, message: { error: 'Too many AI analysis requests.' } });
-const historyReadLimiter = rateLimit({ windowMs: 60 * 1000, max: 60, message: { error: 'Too many history requests.' } });
-const historyWriteLimiter = rateLimit({ windowMs: 60 * 1000, max: 30, message: { error: 'Too many history writes.' } });
+const pingLimiter = rateLimit({ windowMs: 60 * 1000, max: 1200, message: { error: 'Too many ping requests.' } });
+const downloadLimiter = rateLimit({ windowMs: 60 * 1000, max: 600, message: { error: 'Too many download tests.' } });
+const uploadLimiter = rateLimit({ windowMs: 60 * 1000, max: 600, message: { error: 'Too many upload tests.' } });
+const analyzeLimiter = rateLimit({ windowMs: 60 * 1000, max: 20, message: { error: 'Too many AI analysis requests.' } });
+const historyReadLimiter = rateLimit({ windowMs: 60 * 1000, max: 90, message: { error: 'Too many history requests.' } });
+const historyWriteLimiter = rateLimit({ windowMs: 60 * 1000, max: 45, message: { error: 'Too many history writes.' } });
+
+function isGroqConfigured() {
+  const apiKey = process.env.GROQ_API_KEY;
+  return Boolean(apiKey && apiKey !== '<your_api_key_here>');
+}
 
 // ---- Routes ----
 app.get('/', (req, res) => {
-  res.render('index', { servers });
+  res.render('index', {
+    servers,
+    groqConfigured: isGroqConfigured(),
+    dbConfigured: dbEnabled()
+  });
 });
 
 app.get('/history', (req, res) => {
-  res.render('history');
+  res.render('history', { dbConfigured: dbEnabled() });
+});
+
+app.get('/api/health', (req, res) => {
+  res.json({
+    ok: true,
+    db: dbEnabled(),
+    dbType: dbEnabled() ? dbType : null,
+    groqConfigured: isGroqConfigured(),
+    serverName: servers[0]?.name || 'Serwer bieżący'
+  });
 });
 
 app.get('/api/servers', (req, res) => {
@@ -251,6 +288,7 @@ app.get('/api/download', downloadLimiter, async (req, res) => {
   let remaining = bytes;
   let aborted = false;
   req.on('close', () => { aborted = true; });
+  res.on('close', () => { aborted = true; });
 
   try {
     while (remaining > 0 && !aborted && !res.writableEnded) {
@@ -259,8 +297,18 @@ app.get('/api/download', downloadLimiter, async (req, res) => {
       const ok = res.write(chunk);
       remaining -= size;
       offset = (offset + size) % RANDOM_POOL_SIZE;
-      if (!ok) {
-        await new Promise((resolve) => res.once('drain', resolve));
+      if (!ok && !aborted) {
+        await new Promise((resolve) => {
+          const done = () => {
+            res.off('drain', done);
+            res.off('close', done);
+            req.off('close', done);
+            resolve();
+          };
+          res.once('drain', done);
+          res.once('close', done);
+          req.once('close', done);
+        });
       }
     }
     if (!aborted && !res.writableEnded) res.end();
@@ -274,7 +322,10 @@ app.get('/api/download', downloadLimiter, async (req, res) => {
 app.post('/api/upload', uploadLimiter, (req, res) => {
   let received = 0;
   let aborted = false;
+  req.on('aborted', () => { aborted = true; });
+  res.on('close', () => { aborted = true; });
   req.on('data', (chunk) => {
+    if (aborted) return;
     received += chunk.length;
     if (received > 128 * 1024 * 1024) {
       aborted = true;
@@ -282,11 +333,13 @@ app.post('/api/upload', uploadLimiter, (req, res) => {
     }
   });
   req.on('end', () => {
-    if (aborted) return;
+    if (aborted || res.headersSent || res.writableEnded) return;
     res.json({ received });
   });
   req.on('error', (err) => {
-    if (!res.headersSent) res.status(400).json({ error: err.message });
+    if (!aborted && !res.headersSent && !res.writableEnded) {
+      res.status(400).json({ error: err.message });
+    }
   });
 });
 
@@ -326,7 +379,7 @@ app.post('/api/analyze', analyzeLimiter, async (req, res) => {
 app.get('/api/history', historyReadLimiter, async (req, res) => {
   if (!dbEnabled()) return res.json({ enabled: false, items: [] });
   try {
-    const sql = 'SELECT id, created_at, server_id, download_mbps, upload_mbps, ping_ms, jitter_ms, loaded_latency_ms FROM speed_tests ORDER BY created_at DESC LIMIT 25';
+    const sql = 'SELECT id, created_at, server_id, download_mbps, upload_mbps, ping_ms, jitter_ms, loaded_latency_ms FROM speed_tests ORDER BY created_at DESC LIMIT 50';
     const rows = dbType === 'pg'
       ? (await pgPool.query(sql)).rows
       : (await mysqlPool.query(sql))[0];
@@ -362,6 +415,18 @@ app.post('/api/history', historyWriteLimiter, async (req, res) => {
       );
       res.json({ ok: true, id: result.insertId, createdAt: new Date().toISOString() });
     }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/history', historyWriteLimiter, async (req, res) => {
+  if (!dbEnabled()) return res.status(503).json({ error: 'Database not configured.' });
+  try {
+    await (dbType === 'pg'
+      ? pgPool.query('DELETE FROM speed_tests')
+      : mysqlPool.query('DELETE FROM speed_tests'));
+    res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
